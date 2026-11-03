@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Historie – Unit Tests</title>
+</head>
+<body>
+<h1>Historie – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+<div id="buehne" style="display:none"></div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../ui.js"></script>
+<script src="../ui-history.js"></script>
+<script src="_runner.js"></script>
+<script>
+const CFG = SW.storage.DEFAULTS;
+const buehne = document.getElementById('buehne');
+
+function eintrag(id, cat, dateStr, vonHhmm, minuten) {
+  const start = new Date(dateStr + 'T' + vonHhmm + ':00');
+  const ende = new Date(start.getTime() + minuten * 60000);
+  return { id: id, cat: cat, start: SW.model.toLocalIso(start), end: SW.model.toLocalIso(ende), src: 'timer' };
+}
+
+function tag(dateStr, minuten) {
+  const snap = SW.model.snapshotRules(dateStr, CFG);
+  const entries = [];
+  let offset = 0, n = 0;
+  Object.keys(minuten).forEach(cat => {
+    const start = new Date(dateStr + 'T08:00:00');
+    start.setMinutes(start.getMinutes() + offset);
+    entries.push(eintrag('e' + (++n), cat, dateStr, SW.ui.fmtTime(SW.model.toLocalIso(start)), minuten[cat]));
+    offset += minuten[cat];
+  });
+  return { target: snap.target, mins: snap.mins, entries: entries };
+}
+
+function loader(map) { return function (d) { return map[d] || null; }; }
+
+const VOLL = { haushalt: 60, bewerbung: 60, verein: 60, umbau: 60 };
+
+suite('Historie: Woche');
+
+test('weekModel liefert sieben Tage von Montag bis Sonntag', () => {
+  const m = SW.history.weekModel('2026-11-03', loader({}), CFG);
+  assertEqual(m.days.length, 7);
+  assertEqual(m.from, '2026-11-02');
+  assertEqual(m.to, '2026-11-08');
+  assertEqual(m.days[0].weekday, 'Mo');
+  assertEqual(m.days[0].dateKey, '2026-11-02');
+  assertEqual(m.days[6].weekday, 'So');
+});
+
+test('weekModel markiert freie Tage und erfüllte Tage', () => {
+  const m = SW.history.weekModel('2026-11-03', loader({ '2026-11-02': tag('2026-11-02', VOLL) }), CFG);
+  assertEqual(m.days[0].fulfilled, true);
+  assertEqual(m.days[0].total, 240);
+  assertEqual(m.days[5].free, true);  // Samstag
+  assertEqual(m.days[1].fulfilled, false);
+});
+
+test('weekModel zeigt den Stand der Wochen-Minima', () => {
+  const map = { '2026-11-02': tag('2026-11-02', { verein: 60 }), '2026-11-04': tag('2026-11-04', { verein: 30 }) };
+  const m = SW.history.weekModel('2026-11-05', loader(map), CFG);
+  const verein = m.weekMins.filter(x => x.cat === 'verein')[0];
+  assertEqual(verein.have, 90);
+  assertEqual(verein.need, 120);
+  assertEqual(verein.done, false);
+  assertEqual(verein.name, 'Verein');
+  assertEqual(m.weekMins.length, 2);
+  assertEqual(m.total, 90);
+});
+
+test('weekModel meldet die erfüllte Woche', () => {
+  const map = {};
+  ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'].forEach(d => { map[d] = tag(d, VOLL); });
+  assertEqual(SW.history.weekModel('2026-11-06', loader(map), CFG).fulfilled, true);
+});
+
+suite('Historie: Monat');
+
+test('monthModel zählt die erfüllten Tage', () => {
+  const map = {};
+  ['2026-11-02', '2026-11-03', '2026-11-04'].forEach(d => { map[d] = tag(d, VOLL); });
+  const m = SW.history.monthModel('2026-11', loader(map), CFG);
+  assertEqual(m.fulfilledCount, 3);
+  assertEqual(m.total, 720);
+  assertEqual(m.ym, '2026-11');
+});
+
+test('monthModel liefert alle Tage des Monats', () => {
+  assertEqual(SW.history.monthModel('2026-11', loader({}), CFG).days.length, 30);
+  assertEqual(SW.history.monthModel('2026-02', loader({}), CFG).days.length, 28);
+});
+
+test('monthModel verteilt die Minuten auf Kategorien', () => {
+  const m = SW.history.monthModel('2026-11', loader({ '2026-11-03': tag('2026-11-03', { haushalt: 90, verein: 30 }) }), CFG);
+  const summe = m.byCat.reduce((a, b) => a + b.minutes, 0);
+  assertEqual(summe, m.total);
+  const haushalt = m.byCat.filter(x => x.cat === 'haushalt')[0];
+  assertEqual(haushalt.minutes, 90);
+  assertClose(haushalt.share, 0.75, 0.0001);
+});
+
+test('monthModel führt gelöschte Kategorien als Unbekannt', () => {
+  const m = SW.history.monthModel('2026-11', loader({ '2026-11-03': tag('2026-11-03', { geloescht: 45 }) }), CFG);
+  const row = m.byCat.filter(x => x.cat === 'geloescht')[0];
+  assertEqual(row.name, 'Unbekannt');
+  assertEqual(row.minutes, 45);
+});
+
+test('monthModel kommt mit einem leeren Monat zurecht', () => {
+  const m = SW.history.monthModel('2026-11', loader({}), CFG);
+  assertEqual(m.total, 0);
+  assertEqual(m.fulfilledCount, 0);
+  assertEqual(m.byCat.length, 0);
+});
+
+suite('Historie: Darstellung');
+
+test('render zeigt die Wochentage der Wochenansicht', () => {
+  SW.history.render(buehne, SW.history.weekModel('2026-11-03', loader({ '2026-11-02': tag('2026-11-02', VOLL) }), CFG), 'week');
+  assertEqual(buehne.querySelectorAll('.hist-day').length, 7);
+  assertEqual(buehne.querySelectorAll('.hist-day.ok').length, 1);
+  assert(/Verein/.test(buehne.textContent), 'Wochen-Minima fehlen');
+});
+
+test('render zeigt die Kategorieverteilung der Monatsansicht', () => {
+  SW.history.render(buehne, SW.history.monthModel('2026-11', loader({ '2026-11-03': tag('2026-11-03', { haushalt: 90 }) }), CFG), 'month');
+  assert(/Haushalt/.test(buehne.textContent), 'Kategorie fehlt');
+  assert(/1:30/.test(buehne.textContent), 'Summe fehlt');
+});
+
+test('render zeigt einen leeren Monat ohne Absturz', () => {
+  SW.history.render(buehne, SW.history.monthModel('2026-11', loader({}), CFG), 'month');
+  assert(buehne.querySelector('.empty'), 'Hinweis fehlt');
+});
+
+runAll();
+</script>
+</body>
+</html>

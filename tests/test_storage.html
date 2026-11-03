@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>storage.js – Unit Tests</title>
+</head>
+<body>
+<h1>storage.js – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="_runner.js"></script>
+<script>
+function clearSw() {
+  Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
+}
+
+function tagRec() {
+  return {
+    target: 240,
+    mins: { haushalt: [30, 'day'], verein: [120, 'week'] },
+    entries: [
+      { id: 'e1', cat: 'haushalt', start: '2026-11-03T09:05:11+01:00', end: '2026-11-03T09:32:25+01:00', src: 'timer' }
+    ]
+  };
+}
+
+suite('storage: Config');
+
+test('loadConfig liefert ohne gespeicherte Config die Standardwerte', () => {
+  clearSw();
+  const c = SW.storage.loadConfig();
+  assertEqual(c.dayTargets.mon, 240);
+  assertEqual(c.dayTargets.sat, 0);
+  assertEqual(c.categories.length, 4);
+  assertEqual(c.categories[2].id, 'verein');
+  assertEqual(c.categories[2].minPeriod, 'week');
+  assertEqual(c.categories[2].minMinutes, 120);
+  assertEqual(c.askAfterMinutes, 90);
+  assertEqual(c.reminderMinutes, 45);
+  assertEqual(c.hardStopMinutes, 600);
+});
+
+test('loadConfig ergänzt fehlende Felder aus DEFAULTS', () => {
+  clearSw();
+  localStorage.setItem('sw_config', JSON.stringify({ schemaVersion: 1 }));
+  const c = SW.storage.loadConfig();
+  assertEqual(c.hardStopMinutes, 600);
+  assertEqual(c.categories.length, 4);
+});
+
+test('loadConfig überlebt kaputtes JSON', () => {
+  clearSw();
+  localStorage.setItem('sw_config', 'nicht-json');
+  assertEqual(SW.storage.loadConfig().dayTargets.mon, 240);
+});
+
+test('loadConfig gibt keine Referenz auf DEFAULTS heraus', () => {
+  clearSw();
+  const c = SW.storage.loadConfig();
+  c.dayTargets.mon = 1;
+  assertEqual(SW.storage.loadConfig().dayTargets.mon, 240);
+});
+
+test('saveConfig setzt sw_last_change', () => {
+  clearSw();
+  const res = SW.storage.saveConfig(SW.storage.loadConfig());
+  assertEqual(res.ok, true);
+  const t = SW.storage.lastChange();
+  assert(t !== null, 'lastChange fehlt');
+  assert(!isNaN(new Date(t).getTime()), 'lastChange nicht parsebar: ' + t);
+});
+
+suite('storage: Protokoll');
+
+test('saveDay/loadDay runden ein Tagesobjekt durch', () => {
+  clearSw();
+  const rec = tagRec();
+  assertEqual(SW.storage.saveDay('2026-11-03', rec).ok, true);
+  const back = SW.storage.loadDay('2026-11-03');
+  assertEqual(back.target, 240);
+  assertEqual(back.entries.length, 1);
+  assertEqual(back.entries[0].cat, 'haushalt');
+  assertDeepEqual(back.mins.verein, [120, 'week']);
+});
+
+test('loadDay liefert null für einen Tag ohne Einträge', () => {
+  clearSw();
+  assertEqual(SW.storage.loadDay('2026-11-03'), null);
+});
+
+test('listMonths liefert nur eigene Schlüssel, sortiert', () => {
+  clearSw();
+  localStorage.setItem('lgc_log_2026-01', '{}');
+  SW.storage.saveDay('2026-12-01', tagRec());
+  SW.storage.saveDay('2026-02-01', tagRec());
+  assertDeepEqual(SW.storage.listMonths(), ['2026-02', '2026-12']);
+  localStorage.removeItem('lgc_log_2026-01');
+});
+
+test('loadMonth liefert alle Tage eines Monats', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tagRec());
+  SW.storage.saveDay('2026-11-04', tagRec());
+  assertEqual(Object.keys(SW.storage.loadMonth('2026-11')).length, 2);
+});
+
+suite('storage: laufender Eintrag');
+
+test('saveRunning/loadRunning/clearRunning', () => {
+  clearSw();
+  SW.storage.saveRunning({ cat: 'haushalt', start: '2026-11-03T09:00:00+01:00', lastSeen: '2026-11-03T09:00:00+01:00', reminded: false, asked: false });
+  assertEqual(SW.storage.loadRunning().cat, 'haushalt');
+  SW.storage.clearRunning();
+  assertEqual(SW.storage.loadRunning(), null);
+});
+
+suite('storage: Fehlerfälle');
+
+test('saveDay meldet Fehler bei vollem Speicher statt stumm zu scheitern', () => {
+  clearSw();
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () {
+    const e = new Error('quota'); e.name = 'QuotaExceededError'; throw e;
+  };
+  let res;
+  try { res = SW.storage.saveDay('2026-11-03', tagRec()); }
+  finally { Storage.prototype.setItem = echt; }
+  assertEqual(res.ok, false);
+  assert(/Speicher/.test(res.error), 'Fehlertext nennt den Speicher: ' + res.error);
+  assertEqual(SW.storage.loadDay('2026-11-03'), null);
+});
+
+test('saveDay setzt sw_last_change nicht, wenn das Schreiben scheitert', () => {
+  clearSw();
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { throw new Error('nope'); };
+  try { SW.storage.saveDay('2026-11-03', tagRec()); }
+  finally { Storage.prototype.setItem = echt; }
+  assertEqual(SW.storage.lastChange(), null);
+});
+
+suite('storage: Export und Import');
+
+test('validateBackup lehnt fehlende und falsch typisierte Felder ab', () => {
+  assertEqual(SW.storage.validateBackup({}).ok, false);
+  assertEqual(SW.storage.validateBackup(null).ok, false);
+  assertEqual(SW.storage.validateBackup({ config: { dayTargets: { mon: '240' } } }).ok, false);
+  assertEqual(SW.storage.validateBackup({ config: { categories: 'nein' } }).ok, false);
+});
+
+test('validateBackup sammelt mehrere Fehler statt beim ersten abzubrechen', () => {
+  const r = SW.storage.validateBackup({ config: { dayTargets: { mon: '240' }, categories: 'nein' } });
+  assertEqual(r.ok, false);
+  assert(r.errors.length >= 2, 'nur ' + r.errors.length + ' Fehler gemeldet');
+});
+
+test('validateBackup lehnt einen Eintrag ohne Kategorie ab', () => {
+  const backup = SW.storage.exportAll();
+  backup.logs = { '2026-11': { '2026-11-03': { target: 240, mins: {}, entries: [{ id: 'e1', start: 'x', end: 'y' }] } } };
+  assertEqual(SW.storage.validateBackup(backup).ok, false);
+});
+
+test('importAll schreibt bei ungültigem Backup nichts', () => {
+  clearSw();
+  SW.storage.saveConfig(SW.storage.loadConfig());
+  assertEqual(SW.storage.importAll({ config: { categories: 'nein' } }).ok, false);
+  assertEqual(SW.storage.loadConfig().categories.length, 4);
+});
+
+test('exportAll und importAll sind zueinander invers', () => {
+  clearSw();
+  const cfg = SW.storage.loadConfig();
+  cfg.dayTargets.sat = 120;
+  SW.storage.saveConfig(cfg);
+  SW.storage.saveDay('2026-11-03', tagRec());
+  const backup = SW.storage.exportAll();
+  clearSw();
+  const res = SW.storage.importAll(backup);
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+  assertEqual(SW.storage.loadConfig().dayTargets.sat, 120);
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 1);
+});
+
+test('exportAll trägt Version und Zeitpunkt', () => {
+  clearSw();
+  const b = SW.storage.exportAll();
+  assertEqual(b.appVersion, APP_VERSION);
+  assert(!isNaN(new Date(b.exportedAt).getTime()), 'exportedAt nicht parsebar');
+});
+
+test('markExported und lastExportAt merken den letzten Export', () => {
+  clearSw();
+  assertEqual(SW.storage.lastExportAt(), null);
+  SW.storage.markExported('2026-11-03T13:00:00+01:00');
+  assertEqual(SW.storage.lastExportAt(), '2026-11-03T13:00:00+01:00');
+});
+
+runAll();
+</script>
+</body>
+</html>

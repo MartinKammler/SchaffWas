@@ -105,13 +105,142 @@ SW.model = (function () {
     return out;
   }
 
+  /* ── Teil 2: Erfüllung und Serie ────────────────────────────── */
+
+  const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+  function dateFromKey(dateStr) {
+    const p = String(dateStr).split('-');
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12, 0, 0, 0);
+  }
+
+  function shiftDays(dateStr, n) {
+    const d = dateFromKey(dateStr);
+    d.setDate(d.getDate() + n);
+    return dateKeyOf(d);
+  }
+
+  function activeCategories(config) {
+    const list = (config && Array.isArray(config.categories)) ? config.categories : [];
+    return list.filter(c => c && c.active !== false);
+  }
+
+  function dayTargetFor(dateStr, config) {
+    const key = WEEKDAY_KEYS[dateFromKey(dateStr).getDay()];
+    const t = config && config.dayTargets ? config.dayTargets[key] : undefined;
+    return typeof t === 'number' ? t : 0;
+  }
+
+  // Was beim ersten Eintrag eines Tages ins Protokoll kopiert wird. Ohne
+  // diesen Abzug würde eine spätere Änderung an Soll oder Minima alte Tage
+  // rückwirkend entwerten (Spec §7.2).
+  function snapshotRules(dateStr, config) {
+    const mins = {};
+    activeCategories(config).forEach(c => { mins[c.id] = [c.minMinutes || 0, c.minPeriod || 'day']; });
+    return { target: dayTargetFor(dateStr, config), mins: mins };
+  }
+
+  function rulesFor(dateStr, dayRec, config) {
+    if (dayRec && typeof dayRec.target === 'number' && dayRec.mins) {
+      return { target: dayRec.target, mins: dayRec.mins };
+    }
+    return snapshotRules(dateStr, config);
+  }
+
+  function dayStatus(dateStr, dayRec, config) {
+    const rules = rulesFor(dateStr, dayRec, config);
+    const totals = dayTotals(dayRec);
+    const free = rules.target === 0;
+    const missing = [];
+
+    if (!free) {
+      Object.keys(rules.mins).forEach(cat => {
+        const regel = rules.mins[cat];
+        const need = regel[0], periode = regel[1];
+        if (periode !== 'day' || need <= 0) return;
+        const have = totals.byCat[cat] || 0;
+        if (have < need) missing.push({ cat: cat, have: have, need: need });
+      });
+    }
+
+    return {
+      total: totals.total,
+      target: rules.target,
+      byCat: totals.byCat,
+      free: free,
+      missing: missing,
+      fulfilled: !free && totals.total >= rules.target && missing.length === 0
+    };
+  }
+
+  // Montag bis Sonntag der Woche, in der dateStr liegt.
+  function weekRange(dateStr) {
+    const d = dateFromKey(dateStr);
+    const dow = d.getDay(); // 0 = Sonntag
+    const zurueck = (dow + 6) % 7;
+    const from = shiftDays(dateStr, -zurueck);
+    return { from: from, to: shiftDays(from, 6) };
+  }
+
+  function weekStatus(dateStr, loadDay, config) {
+    const range = weekRange(dateStr);
+    const rules = snapshotRules(dateStr, config);
+    const byCat = {};
+    Object.keys(rules.mins).forEach(cat => {
+      if (rules.mins[cat][1] === 'week' && rules.mins[cat][0] > 0) {
+        byCat[cat] = { have: 0, need: rules.mins[cat][0] };
+      }
+    });
+
+    let total = 0;
+    let alleTageErfuellt = true;
+    let tag = range.from;
+    for (let i = 0; i < 7; i++) {
+      const rec = loadDay(tag);
+      const totals = dayTotals(rec);
+      total += totals.total;
+      Object.keys(byCat).forEach(cat => { byCat[cat].have += (totals.byCat[cat] || 0); });
+
+      const st = dayStatus(tag, rec, config);
+      if (!st.free && !st.fulfilled) alleTageErfuellt = false;
+      tag = shiftDays(tag, 1);
+    }
+
+    const minimaErfuellt = Object.keys(byCat).every(cat => byCat[cat].have >= byCat[cat].need);
+    return { from: range.from, to: range.to, byCat: byCat, total: total, fulfilled: alleTageErfuellt && minimaErfuellt };
+  }
+
+  // Aufeinanderfolgende erfüllte Tage, rückwärts ab dem Vortag von dateStr.
+  // Tage ohne Soll werden übersprungen: sie zählen nicht und brechen nicht.
+  // Der heutige Tag wird nie bewertet — er ist noch nicht vorbei.
+  function streak(dateStr, loadDay, config) {
+    let zahl = 0;
+    let tag = shiftDays(dateStr, -1);
+    for (let i = 0; i < 400; i++) {
+      const st = dayStatus(tag, loadDay(tag), config);
+      if (st.free) { tag = shiftDays(tag, -1); continue; }
+      if (!st.fulfilled) break;
+      zahl++;
+      tag = shiftDays(tag, -1);
+    }
+    return zahl;
+  }
+
   return {
     toLocalIso: toLocalIso,
     dateKeyOf: dateKeyOf,
     nextMidnight: nextMidnight,
+    shiftDays: shiftDays,
     entryMinutes: entryMinutes,
     splitAtMidnight: splitAtMidnight,
     overlapOf: overlapOf,
-    dayTotals: dayTotals
+    dayTotals: dayTotals,
+    dayTargetFor: dayTargetFor,
+    snapshotRules: snapshotRules,
+    rulesFor: rulesFor,
+    dayStatus: dayStatus,
+    weekRange: weekRange,
+    weekStatus: weekStatus,
+    streak: streak
   };
 })();

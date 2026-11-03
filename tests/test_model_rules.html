@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>model.js (Regeln) – Unit Tests</title>
+</head>
+<body>
+<h1>model.js (Regeln) – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="_runner.js"></script>
+<script>
+const CFG = SW.storage.DEFAULTS;
+
+function cfgKopie() { return JSON.parse(JSON.stringify(CFG)); }
+
+/* Baut ein Tagesobjekt: tag('2026-11-03', {haushalt: 60, bewerbung: 30})
+   erzeugt aufeinanderfolgende Einträge ab 08:00 und den Regel-Abzug. */
+function tag(dateStr, minuten, config) {
+  const cfg = config || CFG;
+  const entries = [];
+  let offset = 0, n = 0;
+  Object.keys(minuten).forEach(cat => {
+    const dauer = minuten[cat];
+    const start = new Date(dateStr + 'T08:00:00');
+    start.setMinutes(start.getMinutes() + offset);
+    const ende = new Date(start.getTime() + dauer * 60000);
+    entries.push({ id: 'e' + (++n), cat: cat, start: SW.model.toLocalIso(start), end: SW.model.toLocalIso(ende), src: 'timer' });
+    offset += dauer;
+  });
+  const snap = SW.model.snapshotRules(dateStr, cfg);
+  return { target: snap.target, mins: snap.mins, entries: entries };
+}
+
+function loaderAus(map) {
+  return function (dateStr) { return map[dateStr] || null; };
+}
+
+const VOLL = { haushalt: 60, bewerbung: 60, verein: 60, umbau: 60 };
+
+suite('model: Regel-Abzug');
+
+test('snapshotRules kopiert Soll und Minima nur aktiver Kategorien', () => {
+  const cfg = cfgKopie();
+  cfg.categories[3].active = false;
+  const snap = SW.model.snapshotRules('2026-11-03', cfg);
+  assertEqual(snap.target, 240);
+  assertDeepEqual(snap.mins.verein, [120, 'week']);
+  assertEqual(snap.mins.umbau, undefined);
+});
+
+test('snapshotRules nimmt das Soll des jeweiligen Wochentags', () => {
+  assertEqual(SW.model.snapshotRules('2026-11-07', CFG).target, 0); // Samstag
+  assertEqual(SW.model.snapshotRules('2026-11-03', CFG).target, 240); // Dienstag
+});
+
+test('rulesFor bevorzugt den gespeicherten Abzug vor der aktuellen Config', () => {
+  const rec = tag('2026-11-03', { haushalt: 30 });
+  const cfg = cfgKopie();
+  cfg.dayTargets.tue = 300;
+  assertEqual(SW.model.rulesFor('2026-11-03', rec, cfg).target, 240);
+});
+
+test('rulesFor fällt ohne gespeicherten Abzug auf die aktuelle Config zurück', () => {
+  const cfg = cfgKopie();
+  cfg.dayTargets.tue = 300;
+  assertEqual(SW.model.rulesFor('2026-11-03', null, cfg).target, 300);
+});
+
+suite('model: Tageserfüllung');
+
+test('dayStatus ist erfüllt bei 4 h und erreichten Tages-Minima', () => {
+  const s = SW.model.dayStatus('2026-11-03', tag('2026-11-03', VOLL), CFG);
+  assertEqual(s.total, 240);
+  assertEqual(s.target, 240);
+  assertEqual(s.fulfilled, true);
+  assertEqual(s.missing.length, 0);
+});
+
+test('dayStatus ist nicht erfüllt, wenn ein Tages-Minimum fehlt', () => {
+  const s = SW.model.dayStatus('2026-11-03', tag('2026-11-03', { haushalt: 180, bewerbung: 10, verein: 60, umbau: 40 }), CFG);
+  assertEqual(s.total, 290);
+  assertEqual(s.fulfilled, false);
+  assertEqual(s.missing.length, 1);
+  assertEqual(s.missing[0].cat, 'bewerbung');
+  assertEqual(s.missing[0].have, 10);
+  assertEqual(s.missing[0].need, 30);
+});
+
+test('dayStatus ignoriert Wochen-Minima', () => {
+  const s = SW.model.dayStatus('2026-11-03', tag('2026-11-03', { haushalt: 180, bewerbung: 60 }), CFG);
+  assertEqual(s.total, 240);
+  assertEqual(s.fulfilled, true);
+});
+
+test('dayStatus ist nicht erfüllt, wenn das Tagessoll fehlt', () => {
+  const s = SW.model.dayStatus('2026-11-03', tag('2026-11-03', { haushalt: 60, bewerbung: 60 }), CFG);
+  assertEqual(s.fulfilled, false);
+});
+
+test('dayStatus markiert Tage ohne Soll als frei', () => {
+  const s = SW.model.dayStatus('2026-11-08', null, CFG); // Sonntag
+  assertEqual(s.free, true);
+  assertEqual(s.target, 0);
+  assertEqual(s.fulfilled, false);
+  assertEqual(s.missing.length, 0);
+});
+
+test('dayStatus stürzt bei unbekannter Kategorie nicht ab', () => {
+  const rec = tag('2026-11-03', VOLL);
+  rec.entries.push({ id: 'e9', cat: 'geloescht', start: '2026-11-03T18:00:00+01:00', end: '2026-11-03T18:30:00+01:00', src: 'timer' });
+  const s = SW.model.dayStatus('2026-11-03', rec, CFG);
+  assertEqual(s.total, 270);
+  assertEqual(s.fulfilled, true);
+  assertEqual(s.missing.length, 0);
+});
+
+test('dayStatus fordert kein Minimum von inaktiven Kategorien', () => {
+  const cfg = cfgKopie();
+  cfg.categories[1].active = false;
+  const s = SW.model.dayStatus('2026-11-03', tag('2026-11-03', { haushalt: 240 }, cfg), cfg);
+  assertEqual(s.fulfilled, true);
+});
+
+suite('model: Woche');
+
+test('weekRange liefert Montag bis Sonntag', () => {
+  assertEqual(SW.model.weekRange('2026-11-03').from, '2026-11-02');
+  assertEqual(SW.model.weekRange('2026-11-03').to, '2026-11-08');
+});
+
+test('weekRange funktioniert über den Jahreswechsel', () => {
+  assertEqual(SW.model.weekRange('2027-01-01').from, '2026-12-28');
+  assertEqual(SW.model.weekRange('2027-01-01').to, '2027-01-03');
+});
+
+test('weekStatus summiert Wochen-Minima über die ganze Woche', () => {
+  const map = {
+    '2026-11-02': tag('2026-11-02', { verein: 60 }),
+    '2026-11-04': tag('2026-11-04', { verein: 30 })
+  };
+  const w = SW.model.weekStatus('2026-11-05', loaderAus(map), CFG);
+  assertEqual(w.byCat.verein.have, 90);
+  assertEqual(w.byCat.verein.need, 120);
+  assertEqual(w.total, 90);
+  assertEqual(w.fulfilled, false);
+});
+
+test('weekStatus ist erfüllt, wenn alle Tage und alle Wochen-Minima stehen', () => {
+  const map = {};
+  ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'].forEach(d => { map[d] = tag(d, VOLL); });
+  const w = SW.model.weekStatus('2026-11-06', loaderAus(map), CFG);
+  assertEqual(w.byCat.verein.have, 300);
+  assertEqual(w.fulfilled, true);
+});
+
+test('weekStatus führt nur Kategorien mit Wochen-Minimum', () => {
+  const w = SW.model.weekStatus('2026-11-03', loaderAus({}), CFG);
+  assertEqual(w.byCat.haushalt, undefined);
+  assertEqual(w.byCat.umbau.need, 120);
+});
+
+suite('model: Serie');
+
+test('streak zählt aufeinanderfolgende erfüllte Tage', () => {
+  const map = {};
+  ['2026-11-02', '2026-11-03', '2026-11-04'].forEach(d => { map[d] = tag(d, VOLL); });
+  assertEqual(SW.model.streak('2026-11-05', loaderAus(map), CFG), 3);
+});
+
+test('streak überspringt freie Tage ohne zu brechen', () => {
+  const map = {};
+  ['2026-11-06', '2026-11-09'].forEach(d => { map[d] = tag(d, VOLL); }); // Fr und Mo
+  assertEqual(SW.model.streak('2026-11-10', loaderAus(map), CFG), 2);
+});
+
+test('streak bricht an einem nicht erfüllten Werktag', () => {
+  const map = { '2026-11-02': tag('2026-11-02', VOLL), '2026-11-03': tag('2026-11-03', { haushalt: 30 }) };
+  assertEqual(SW.model.streak('2026-11-04', loaderAus(map), CFG), 0);
+});
+
+test('streak lässt sich vom unfertigen heutigen Tag nicht brechen', () => {
+  const map = { '2026-11-03': tag('2026-11-03', VOLL), '2026-11-04': tag('2026-11-04', { haushalt: 5 }) };
+  assertEqual(SW.model.streak('2026-11-04', loaderAus(map), CFG), 1);
+});
+
+test('streak liefert 0 ohne jede Historie', () => {
+  assertEqual(SW.model.streak('2026-11-04', loaderAus({}), CFG), 0);
+});
+
+runAll();
+</script>
+</body>
+</html>

@@ -179,7 +179,9 @@
     });
 
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').then(function (reg) {
+      // updateViaCache: 'none' — sonst liefert der HTTP-Cache die per
+      // importScripts geladenen Skripte, und eine Pruefung sieht alte Bytes.
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
         // Wartet schon einer? Dann wurde die neue Version bei einem früheren
         // Besuch fertig installiert.
         updateHinweis(reg);

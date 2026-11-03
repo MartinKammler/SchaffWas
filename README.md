@@ -62,6 +62,18 @@ npm install          # nur puppeteer-core, für die Tests
 node run-tests.mjs   # alle Suiten
 ```
 
+### Beim Release
+
+Die Versionsnummer steht an **zwei** Stellen, und das ist Absicht:
+
+- `version.js` — für die App (Anzeige, Cache-Name)
+- `sw.js` (`SW_SCRIPT_VERSION`) — damit sich das Hauptskript des Service
+  Workers ändert. Nur daran erkennt ein Browser, dass es eine neue Version
+  gibt; `version.js` kommt per `importScripts` aus dem HTTP-Cache und reicht
+  nicht.
+
+Beide müssen gleich sein — `tests/test_sw.html` bricht sonst ab.
+
 Der Testrunner startet einen lokalen HTTP-Server und fährt die Suiten aus
 `tests/` in einem installierten Edge oder Chrome headless durch. Lokal
 ausprobieren: einen statischen Server im Wurzelverzeichnis starten

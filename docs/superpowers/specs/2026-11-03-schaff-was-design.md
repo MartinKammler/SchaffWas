@@ -126,7 +126,7 @@ Tag durch, und die 4 Stunden stehen abends da. Mehr nicht.
     nicht mehr. Der neue Worker **drängelt nicht**: kein `skipWaiting` beim
     Installieren, stattdessen meldet die Seite "Neue Version verfügbar" mit
     einem Knopf und lädt erst auf Tipp genau einmal neu.
-  - `version.js` als einzige Quelle der App-Version; der Service-Worker leitet
+  - `version.js` als Quelle der App-Version; der Service-Worker leitet
     seinen `CACHE_NAME` daraus ab (`importScripts('./version.js')`), genau wie
     bei LifeguardClock.
   - Tests: `node run-tests.mjs` mit `puppeteer-core` als einzige

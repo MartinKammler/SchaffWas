@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.5.1 — 2026-11-03
+
+**Updates kamen nicht an.** Wer die App installiert hatte, blieb auf 1.4.0
+stehen — auch nach vollständigem Schließen.
+
+Der Grund: Ein Browser erkennt eine neue Version ausschließlich daran, dass
+sich `sw.js` Byte für Byte ändert. Unsere Versionsnummer lag aber nur in
+`version.js`, das per `importScripts` geladen und dabei aus dem HTTP-Cache
+bedient wird. `sw.js` selbst war seit 1.4.0 unverändert — 1.4.1 und 1.5.0
+haben kein einziges Gerät erreicht.
+
+Zwei Riegel dagegen:
+
+- `sw.js` trägt die Versionsnummer jetzt selbst. Damit ändert sich das
+  Hauptskript bei jeder Auslieferung. Ein Test schlägt fehl, wenn die beiden
+  Stellen auseinanderlaufen — vergessen kann man es also nicht.
+- Die Registrierung läuft mit `updateViaCache: 'none'`. Damit werden auch die
+  importierten Skripte frisch geholt und nicht aus dem Cache bedient.
+
+Nachgemessen statt vermutet: unter echten GitHub-Pages-Headern
+(`max-age=600`) wurde eine Auslieferung, die nur `version.js` bumpt, nicht
+erkannt; mit beiden Änderungen schon.
+
 ## 1.5.0 — 2026-11-03
 
 - **Die Versionsnummer steht jetzt da, wo man sie sucht:** klein unter dem

@@ -177,6 +177,29 @@ test('index.html lädt alle Skripte, die APP_SHELL nennt', async () => {
   });
 });
 
+suite('Service Worker: Updates kommen an');
+
+test('sw.js traegt die Versionsnummer selbst', async () => {
+  // Der Browser erkennt ein Update daran, dass sich sw.js Byte fuer Byte
+  // aendert. version.js kommt per importScripts aus dem HTTP-Cache und
+  // reicht dafuer nicht: ohne diesen Stempel bleibt jede Auslieferung, die
+  // nur version.js bumpt, auf dem Geraet unsichtbar.
+  const src = await (await fetch('../sw.js')).text();
+  const treffer = src.match(/SW_SCRIPT_VERSION\s*=\s*'([^']+)'/);
+  assert(treffer, 'sw.js nennt keine SW_SCRIPT_VERSION');
+  assertEqual(treffer[1], APP_VERSION,
+    'sw.js steht auf ' + treffer[1] + ', version.js auf ' + APP_VERSION + ' — beide muessen beim Release mit');
+});
+
+test('die Registrierung umgeht den HTTP-Cache fuer importierte Skripte', async () => {
+  const src = await (await fetch('../app.js')).text();
+  const stelle = src.indexOf('serviceWorker.register');
+  assert(stelle !== -1, 'keine Registrierung in app.js');
+  const zeile = src.slice(stelle, stelle + 200);
+  assert(/updateViaCache\s*:\s*'none'/.test(zeile),
+    'register ohne updateViaCache none: ' + zeile.split(String.fromCharCode(10))[0]);
+});
+
 runAll();
 </script>
 </body>

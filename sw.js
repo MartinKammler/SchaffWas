@@ -7,6 +7,17 @@
    version.js. importScripts ist im SW-Kontext synchron und stößt den
    Update-Mechanismus an, sobald sich eine der Dateien ändert. */
 
+/* Die Versionsnummer steht hier ein zweites Mal — mit Absicht.
+   Der Browser erkennt ein Update ausschliesslich daran, dass sich dieses
+   Hauptskript Byte fuer Byte aendert. version.js kommt per importScripts
+   und wird dabei aus dem HTTP-Cache bedient (GitHub Pages: max-age=600),
+   taugt also nicht als Ausloeser: eine Auslieferung, die nur version.js
+   bumpt, bleibt auf einem installierten Geraet unsichtbar. Genau das ist
+   zwischen 1.4.0 und 1.5.0 passiert.
+   Damit die beiden Stellen nicht auseinanderlaufen, prueft
+   tests/test_sw.html, dass sie gleich sind. */
+const SW_SCRIPT_VERSION = '1.5.1';
+
 try {
   importScripts('./version.js', './sw-shell.js');
 } catch (e) {

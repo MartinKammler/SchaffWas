@@ -17,15 +17,35 @@ function clearSw() {
   Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
 }
 
-function tagRec() {
+// Tagesdatensatz, dessen Eintrag auch wirklich an diesem Tag liegt. Der
+// Tagesschlüssel ist Teil der Invarianten (S1), deshalb nimmt der Helfer das
+// Datum entgegen statt es fest einzubauen.
+function tagRec(dateStr) {
+  const d = dateStr || '2026-11-03';
   return {
     target: 240,
     mins: { haushalt: [30, 'day'], verein: [120, 'week'] },
     entries: [
-      { id: 'e1', cat: 'haushalt', start: '2026-11-03T09:05:11+01:00', end: '2026-11-03T09:32:25+01:00', src: 'timer' }
+      { id: 'e1', cat: 'haushalt', start: d + 'T09:05:11+01:00', end: d + 'T09:32:25+01:00', src: 'timer' }
     ]
   };
 }
+
+// Backup mit gültiger Config und den übergebenen Protokollen.
+function backupMit(logs) {
+  return { appVersion: '1.0.0', exportedAt: '2026-11-03T12:00:00+01:00', config: SW.storage.loadConfig(), logs: logs };
+}
+
+// Ein Tag mit genau den übergebenen Einträgen.
+function tagMit(entries) {
+  return { target: 240, mins: {}, entries: entries };
+}
+
+function eintrag(id, von, bis) {
+  return { id: id, cat: 'haushalt', start: von, end: bis, src: 'timer' };
+}
+
+function fehlerText(res) { return res.errors.join(' | '); }
 
 suite('storage: Config');
 
@@ -94,8 +114,8 @@ test('loadDay liefert null für einen Tag ohne Einträge', () => {
 test('listMonths liefert nur eigene Schlüssel, sortiert', () => {
   clearSw();
   localStorage.setItem('lgc_log_2026-01', '{}');
-  SW.storage.saveDay('2026-12-01', tagRec());
-  SW.storage.saveDay('2026-02-01', tagRec());
+  SW.storage.saveDay('2026-12-01', tagRec('2026-12-01'));
+  SW.storage.saveDay('2026-02-01', tagRec('2026-02-01'));
   assertDeepEqual(SW.storage.listMonths(), ['2026-02', '2026-12']);
   localStorage.removeItem('lgc_log_2026-01');
 });
@@ -103,7 +123,7 @@ test('listMonths liefert nur eigene Schlüssel, sortiert', () => {
 test('loadMonth liefert alle Tage eines Monats', () => {
   clearSw();
   SW.storage.saveDay('2026-11-03', tagRec());
-  SW.storage.saveDay('2026-11-04', tagRec());
+  SW.storage.saveDay('2026-11-04', tagRec('2026-11-04'));
   assertEqual(Object.keys(SW.storage.loadMonth('2026-11')).length, 2);
 });
 
@@ -206,7 +226,7 @@ test('importAll ersetzt den Bestand und lässt keine fremden Monate stehen', () 
   clearSw();
   SW.storage.saveDay('2026-11-03', tagRec());
   const backup = SW.storage.exportAll();
-  SW.storage.saveDay('2026-12-01', tagRec());
+  SW.storage.saveDay('2026-12-01', tagRec('2026-12-01'));
   assertEqual(SW.storage.listMonths().length, 2);
   assertEqual(SW.storage.importAll(backup).ok, true);
   assertDeepEqual(SW.storage.listMonths(), ['2026-11']);
@@ -222,7 +242,7 @@ test('importAll stellt den alten Zustand wieder her, wenn das Schreiben scheiter
 
   const fremd = SW.storage.exportAll();
   fremd.config.dayTargets.sat = 199;
-  fremd.logs['2026-12'] = { '2026-12-01': tagRec() };
+  fremd.logs['2026-12'] = { '2026-12-01': tagRec('2026-12-01') };
 
   // Die Quota schlägt an dem Schlüssel zu, der neu dazukommt. Das Zurück-
   // schreiben der alten, kleineren Werte muss danach gelingen — sonst wäre
@@ -281,7 +301,7 @@ test('importAll meldet es, wenn auch die Ruecksicherung scheitert', () => {
   clearSw();
   SW.storage.saveDay('2026-11-03', tagRec());
   const fremd = SW.storage.exportAll();
-  fremd.logs['2026-12'] = { '2026-12-01': tagRec() };
+  fremd.logs['2026-12'] = { '2026-12-01': tagRec('2026-12-01') };
 
   const echt = Storage.prototype.setItem;
   Storage.prototype.setItem = function () { const e = new Error('voll'); e.name = 'QuotaExceededError'; throw e; };
@@ -292,6 +312,269 @@ test('importAll meldet es, wenn auch die Ruecksicherung scheitert', () => {
   assertEqual(res.ok, false);
   assert(res.errors.join(' ').indexOf('nicht vollst') !== -1,
     'Rollback-Fehler nicht gemeldet: ' + res.errors.join(' '));
+});
+
+suite('storage: inhaltliche Invarianten (S1)');
+
+test('validateBackup lehnt einen Eintrag ohne positive Dauer ab', () => {
+  clearSw();
+  const gleich = backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T09:00:00+01:00', '2026-11-03T09:00:00+01:00')
+  ]) } });
+  let res = SW.storage.validateBackup(gleich);
+  assertEqual(res.ok, false);
+  assert(/entries\[0\]/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+
+  const rueckwaerts = backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T10:00:00+01:00', '2026-11-03T09:00:00+01:00')
+  ]) } });
+  res = SW.storage.validateBackup(rueckwaerts);
+  assertEqual(res.ok, false);
+  assert(/logs\.2026-11\.2026-11-03\.entries\[0\]/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+});
+
+test('validateBackup lehnt sich überschneidende Einträge eines Tages ab', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T09:00:00+01:00', '2026-11-03T10:00:00+01:00'),
+    eintrag('e2', '2026-11-03T09:30:00+01:00', '2026-11-03T10:30:00+01:00')
+  ]) } }));
+  assertEqual(res.ok, false);
+  assert(/berschneid/.test(fehlerText(res)), 'Fehlertext: ' + fehlerText(res));
+});
+
+test('validateBackup findet auch Einträge, die ganz in einem anderen liegen', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('lang', '2026-11-03T09:00:00+01:00', '2026-11-03T12:00:00+01:00'),
+    eintrag('drin', '2026-11-03T10:00:00+01:00', '2026-11-03T10:30:00+01:00'),
+    eintrag('auch', '2026-11-03T11:00:00+01:00', '2026-11-03T11:30:00+01:00')
+  ]) } }));
+  assertEqual(res.ok, false);
+  assertEqual(res.errors.filter(t => /berschneid/.test(t)).length, 2, fehlerText(res));
+});
+
+test('validateBackup lässt aneinander grenzende Einträge zu', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T09:00:00+01:00', '2026-11-03T10:00:00+01:00'),
+    eintrag('e2', '2026-11-03T10:00:00+01:00', '2026-11-03T11:00:00+01:00')
+  ]) } }));
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+});
+
+test('validateBackup lehnt doppelte Eintrags-IDs innerhalb eines Tages ab', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T09:00:00+01:00', '2026-11-03T10:00:00+01:00'),
+    eintrag('e1', '2026-11-03T11:00:00+01:00', '2026-11-03T12:00:00+01:00')
+  ]) } }));
+  assertEqual(res.ok, false);
+  assert(/mehrfach/.test(fehlerText(res)), 'Fehlertext: ' + fehlerText(res));
+});
+
+test('validateBackup erlaubt dieselbe Eintrags-ID an verschiedenen Tagen', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': {
+    '2026-11-03': tagMit([eintrag('e1', '2026-11-03T09:00:00+01:00', '2026-11-03T10:00:00+01:00')]),
+    '2026-11-04': tagMit([eintrag('e1', '2026-11-04T09:00:00+01:00', '2026-11-04T10:00:00+01:00')])
+  } }));
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+});
+
+test('validateBackup lehnt doppelte Kategorie-IDs ab', () => {
+  clearSw();
+  const cfg = SW.storage.loadConfig();
+  cfg.categories.push({ id: 'haushalt', name: 'Noch mal Haushalt', color: '#ffffff', minMinutes: 10, minPeriod: 'day', active: true });
+  const res = SW.storage.validateBackup({ config: cfg });
+  assertEqual(res.ok, false);
+  assert(/config\.categories\[4\]\.id/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+  assert(/mehrfach/.test(fehlerText(res)), 'Fehlertext: ' + fehlerText(res));
+});
+
+test('validateBackup lehnt einen Eintrag im falschen Tagesdatensatz ab', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-05T09:00:00+01:00', '2026-11-05T10:00:00+01:00')
+  ]) } }));
+  assertEqual(res.ok, false);
+  assert(/logs\.2026-11\.2026-11-03\.entries\[0\]\.start/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+});
+
+test('validateBackup lehnt einen Tag ab, der nicht zum Monat gehört', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-12-01': tagMit([
+    eintrag('e1', '2026-12-01T09:00:00+01:00', '2026-12-01T10:00:00+01:00')
+  ]) } }));
+  assertEqual(res.ok, false);
+  assert(/logs\.2026-11\.2026-12-01/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+});
+
+test('validateBackup erlaubt einen Eintrag, der bis Mitternacht läuft', () => {
+  // clock.js zerlegt über Mitternacht; der erste Teil endet auf dem
+  // Zeitpunkt, der schon zum Folgetag zählt, und muss gültig bleiben.
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T23:40:00+01:00', '2026-11-04T00:00:00+01:00')
+  ]) } }));
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+});
+
+test('validateBackup lehnt einen Eintrag ab, der über Mitternacht hinausläuft', () => {
+  clearSw();
+  const res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T23:40:00+01:00', '2026-11-04T00:20:00+01:00')
+  ]) } }));
+  assertEqual(res.ok, false);
+  assert(/entries\[0\]\.end/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+});
+
+test('validateBackup lehnt absurde Zahlenwerte ab', () => {
+  clearSw();
+  const cfg = SW.storage.loadConfig();
+  cfg.dayTargets.mon = 99999999;
+  let res = SW.storage.validateBackup({ config: cfg });
+  assertEqual(res.ok, false);
+  assert(/config\.dayTargets\.mon/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+
+  const cfg2 = SW.storage.loadConfig();
+  cfg2.categories[0].minMinutes = 2000; // minPeriod 'day' — mehr als ein Tag
+  res = SW.storage.validateBackup({ config: cfg2 });
+  assertEqual(res.ok, false);
+  assert(/config\.categories\[0\]\.minMinutes/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+
+  const cfg3 = SW.storage.loadConfig();
+  cfg3.hardStopMinutes = 99999;
+  res = SW.storage.validateBackup({ config: cfg3 });
+  assertEqual(res.ok, false);
+  assert(/config\.hardStopMinutes/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+
+  res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': { target: 99999, mins: {}, entries: [] } } }));
+  assertEqual(res.ok, false);
+  assert(/logs\.2026-11\.2026-11-03\.target/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+});
+
+test('validateBackup erlaubt ein Wochen-Minimum über 24 Stunden', () => {
+  // 'week' bezieht sich auf sieben Tage — 1500 Minuten sind dort kein Unsinn.
+  clearSw();
+  const cfg = SW.storage.loadConfig();
+  cfg.categories[2].minMinutes = 1500; // verein, minPeriod 'week'
+  const res = SW.storage.validateBackup({ config: cfg });
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+});
+
+test('validateBackup lehnt ein Backup aus einer neueren Version ab', () => {
+  clearSw();
+  const cfg = SW.storage.loadConfig();
+  cfg.schemaVersion = 2;
+  const res = SW.storage.validateBackup({ config: cfg });
+  assertEqual(res.ok, false);
+  assert(/neueren Version/.test(fehlerText(res)), 'Fehlertext: ' + fehlerText(res));
+});
+
+test('validateBackup meldet unbekannte Felder als Warnung, lehnt sie aber nicht ab', () => {
+  clearSw();
+  const b = backupMit({ '2026-11': { '2026-11-03': tagRec() } });
+  b.config.zukunftsfeld = 'irgendwas';
+  b.logs['2026-11']['2026-11-03'].entries[0].stimmung = 'gut';
+  const res = SW.storage.validateBackup(b);
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+  const w = res.warnings.join(' | ');
+  assert(/config\.zukunftsfeld/.test(w), 'Warnung fehlt: ' + w);
+  assert(/entries\[0\]\.stimmung/.test(w), 'Warnung fehlt: ' + w);
+});
+
+test('validateBackup lehnt zu lange Texte ab', () => {
+  clearSw();
+  const cfg = SW.storage.loadConfig();
+  cfg.categories[0].name = 'x'.repeat(5000);
+  const res = SW.storage.validateBackup({ config: cfg });
+  assertEqual(res.ok, false);
+  assert(/config\.categories\[0\]\.name/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+});
+
+test('validateBackup lehnt unbegrenzte Datenmengen ab', () => {
+  clearSw();
+  const vieleKats = SW.storage.loadConfig();
+  vieleKats.categories = [];
+  for (let i = 0; i < 80; i++) {
+    vieleKats.categories.push({ id: 'k' + i, name: 'K' + i, color: '#ffffff', minMinutes: 0, minPeriod: 'day', active: true });
+  }
+  let res = SW.storage.validateBackup({ config: vieleKats });
+  assertEqual(res.ok, false);
+  assert(/config\.categories/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+
+  const vieleTage = {};
+  for (let i = 1; i <= 40; i++) {
+    vieleTage['2026-11-' + (i < 10 ? '0' + i : i)] = tagMit([]);
+  }
+  res = SW.storage.validateBackup(backupMit({ '2026-11': vieleTage }));
+  assertEqual(res.ok, false);
+  assert(/logs\.2026-11/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+
+  const vieleMonate = {};
+  for (let j = 0; j < 1300; j++) {
+    const jahr = 1900 + Math.floor(j / 12);
+    const monat = (j % 12) + 1;
+    vieleMonate[jahr + '-' + (monat < 10 ? '0' + monat : monat)] = {};
+  }
+  res = SW.storage.validateBackup(backupMit(vieleMonate));
+  assertEqual(res.ok, false);
+  assert(/Monate/.test(fehlerText(res)), 'Fehlertext: ' + fehlerText(res));
+
+  const vieleEintraege = [];
+  for (let k = 0; k < 600; k++) {
+    vieleEintraege.push(eintrag('e' + k, '2026-11-03T09:00:00+01:00', '2026-11-03T09:01:00+01:00'));
+  }
+  res = SW.storage.validateBackup(backupMit({ '2026-11': { '2026-11-03': tagMit(vieleEintraege) } }));
+  assertEqual(res.ok, false);
+  assert(/logs\.2026-11\.2026-11-03\.entries/.test(fehlerText(res)), 'Pfad fehlt: ' + fehlerText(res));
+});
+
+test('validateBackup sammelt alle Invarianz-Fehler statt beim ersten abzubrechen', () => {
+  clearSw();
+  const cfg = SW.storage.loadConfig();
+  cfg.dayTargets.mon = 99999999;
+  cfg.categories.push({ id: 'haushalt', name: 'Zweites Haushalt', color: '#ffffff', minMinutes: 10, minPeriod: 'day', active: true });
+  const res = SW.storage.validateBackup({
+    config: cfg,
+    logs: { '2026-11': { '2026-11-03': tagMit([
+      eintrag('e1', '2026-11-03T09:00:00+01:00', '2026-11-03T10:00:00+01:00'),
+      eintrag('e1', '2026-11-03T09:30:00+01:00', '2026-11-03T09:10:00+01:00')
+    ]) } }
+  });
+  assertEqual(res.ok, false);
+  assert(res.errors.length >= 4, 'nur ' + res.errors.length + ' Fehler: ' + fehlerText(res));
+  assert(res.errors.every(t => /\.$/.test(t)), 'Fehlertexte ohne Punkt: ' + fehlerText(res));
+});
+
+test('validateBackup nimmt die Config aus dem Formular unverändert an', () => {
+  // Jedes Speichern aus den Einstellungen läuft hier durch — eine neue Regel
+  // darf nichts ablehnen, was die Oberfläche legitim erzeugt.
+  clearSw();
+  const res = SW.storage.validateBackup({ config: SW.storage.loadConfig() });
+  assertDeepEqual(res.errors, []);
+  assertDeepEqual(res.warnings, []);
+  assertEqual(res.ok, true);
+  assertEqual(SW.storage.validateBackup(SW.storage.exportAll()).ok, true);
+});
+
+test('importAll lehnt ein Backup mit verletzten Invarianten ab und schreibt nichts', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tagRec());
+  const kaputt = backupMit({ '2026-11': { '2026-11-03': tagMit([
+    eintrag('e1', '2026-11-03T09:00:00+01:00', '2026-11-03T10:00:00+01:00'),
+    eintrag('e2', '2026-11-03T09:30:00+01:00', '2026-11-03T10:30:00+01:00')
+  ]) } });
+  const res = SW.storage.importAll(kaputt);
+  assertEqual(res.ok, false);
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 1);
+  assertEqual(SW.storage.loadDay('2026-11-03').entries[0].id, 'e1');
 });
 
 runAll();

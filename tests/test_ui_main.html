@@ -8,7 +8,7 @@
 <h1>Hauptschirm – Unit Tests</h1>
 <div id="output"></div>
 <div id="summary"></div>
-<div id="buehne" style="display:none"></div>
+<div id="buehne" style="position:absolute;left:-9999px;top:0"></div>
 
 <script src="../version.js"></script>
 <script src="../storage.js"></script>
@@ -357,6 +357,62 @@ test('die Knöpfe sagen, was sie tun', () => {
   assert(!/buchen/i.test(knoepfe[0].textContent), 'Knopf 1 verspricht fälschlich eine Buchung');
   assert(/stopp/i.test(knoepfe[1].textContent), 'Knopf 2 sagt nicht, dass gestoppt wird: ' + knoepfe[1].textContent);
   SW.ui.clearAsk();
+});
+
+suite('Bedienbarkeit: Dialog, Banner, Navigation');
+
+test('die Rueckfrage ist ein Dialog mit Fokus auf dem ersten Knopf', () => {
+  SW.ui.ask({ cat: 'Haushalt', minutes: 130, lastSeen: '2026-11-03T09:32:00+01:00' }, () => {});
+  const box = document.querySelector('.ask');
+  assertEqual(box.getAttribute('role'), 'dialog');
+  assertEqual(box.getAttribute('aria-modal'), 'true');
+  assertEqual(document.activeElement, box.querySelector('button'));
+  SW.ui.clearAsk();
+});
+
+test('Escape beantwortet die Rueckfrage nicht, sondern laesst sie stehen', () => {
+  // Die Frage ist wichtig genug, dass sie nicht aus Versehen verschwindet.
+  let gewaehlt = 'nichts';
+  SW.ui.ask({ cat: 'Haushalt', minutes: 130, lastSeen: '2026-11-03T09:32:00+01:00' }, c => { gewaehlt = c; });
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert(document.querySelector('.ask'), 'Rueckfrage verschwunden');
+  assertEqual(gewaehlt, 'nichts');
+  SW.ui.clearAsk();
+});
+
+test('der Banner meldet sich bei Screenreadern', () => {
+  SW.ui.banner('Läuft die Uhr noch, oder du?', 'remind');
+  const b = document.querySelector('.banner');
+  assertEqual(b.getAttribute('role'), 'status');
+  assertEqual(b.getAttribute('aria-live'), 'polite');
+  SW.ui.clearBanner();
+});
+
+test('ein Fehlerbanner draengt sich vor', () => {
+  SW.ui.banner('Speicher voll', 'error');
+  const b = document.querySelector('.banner');
+  assertEqual(b.getAttribute('role'), 'alert');
+  assertEqual(b.getAttribute('aria-live'), 'assertive');
+  SW.ui.clearBanner();
+});
+
+test('die Navigation markiert den aktiven Schirm auch fuer Screenreader', () => {
+  const nav = document.createElement('nav');
+  nav.innerHTML = '<button data-screen="screen-main">Heute</button>'
+    + '<button data-screen="screen-log">Protokoll</button>';
+  document.body.appendChild(nav);
+  const section = document.createElement('section');
+  section.id = 'screen-log';
+  section.className = 'screen';
+  document.body.appendChild(section);
+  try {
+    SW.ui.show('screen-log');
+    assertEqual(nav.querySelector('[data-screen=screen-log]').getAttribute('aria-current'), 'page');
+    assertEqual(nav.querySelector('[data-screen=screen-main]').getAttribute('aria-current'), null);
+  } finally {
+    nav.remove();
+    section.remove();
+  }
 });
 
 runAll();

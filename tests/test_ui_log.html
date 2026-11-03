@@ -8,7 +8,7 @@
 <h1>Tagesprotokoll – Unit Tests</h1>
 <div id="output"></div>
 <div id="summary"></div>
-<div id="buehne" style="display:none"></div>
+<div id="buehne" style="position:absolute;left:-9999px;top:0"></div>
 
 <script src="../version.js"></script>
 <script src="../storage.js"></script>
@@ -111,9 +111,9 @@ test('openEditor füllt das Formular mit dem Eintrag', () => {
   SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
   SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
   SW.log.openEditorById('2026-11-03', 'e1');
-  assertEqual(buehne.querySelector('.editor [name=von]').value, '09:05');
-  assertEqual(buehne.querySelector('.editor [name=bis]').value, '09:32');
-  assertEqual(buehne.querySelector('.editor [name=cat]').value, 'haushalt');
+  assertEqual(document.querySelector('.editor [name=von]').value, '09:05');
+  assertEqual(document.querySelector('.editor [name=bis]').value, '09:32');
+  assertEqual(document.querySelector('.editor [name=cat]').value, 'haushalt');
 });
 
 test('Speichern einer Korrektur ändert den Eintrag', () => {
@@ -121,10 +121,10 @@ test('Speichern einer Korrektur ändert den Eintrag', () => {
   SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
   SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
   SW.log.openEditorById('2026-11-03', 'e1');
-  buehne.querySelector('.editor [name=bis]').value = '10:05';
-  buehne.querySelector('.editor [name=speichern]').click();
+  document.querySelector('.editor [name=bis]').value = '10:05';
+  document.querySelector('.editor [name=speichern]').click();
   assertEqual(SW.model.entryMinutes(SW.storage.loadDay('2026-11-03').entries[0]), 60);
-  assertEqual(buehne.querySelector('.editor'), null);
+  assertEqual(document.querySelector('.editor'), null);
 });
 
 test('render zeigt die Fehlermeldung einer abgelehnten Überschneidung an', () => {
@@ -132,9 +132,9 @@ test('render zeigt die Fehlermeldung einer abgelehnten Überschneidung an', () =
   SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:00', 60), eintrag('e2', 'verein', '11:00', 60)]));
   SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
   SW.log.openEditorById('2026-11-03', 'e2');
-  buehne.querySelector('.editor [name=von]').value = '09:30';
-  buehne.querySelector('.editor [name=speichern]').click();
-  const fehler = buehne.querySelector('.editor .fehler');
+  document.querySelector('.editor [name=von]').value = '09:30';
+  document.querySelector('.editor [name=speichern]').click();
+  const fehler = document.querySelector('.editor .fehler');
   assert(fehler && /Überschneidet sich/.test(fehler.textContent), 'Fehlermeldung fehlt: ' + (fehler ? fehler.textContent : 'kein Element'));
   assertEqual(SW.model.entryMinutes(SW.storage.loadDay('2026-11-03').entries[1]), 60);
 });
@@ -143,10 +143,10 @@ test('Nachtragen legt einen neuen Eintrag an', () => {
   clearSw();
   SW.log.render(buehne, SW.log.model('2026-11-03', null, CFG));
   SW.log.openEditor('2026-11-03', null);
-  buehne.querySelector('.editor [name=cat]').value = 'verein';
-  buehne.querySelector('.editor [name=von]').value = '14:00';
-  buehne.querySelector('.editor [name=bis]').value = '15:00';
-  buehne.querySelector('.editor [name=speichern]').click();
+  document.querySelector('.editor [name=cat]').value = 'verein';
+  document.querySelector('.editor [name=von]').value = '14:00';
+  document.querySelector('.editor [name=bis]').value = '15:00';
+  document.querySelector('.editor [name=speichern]').click();
   const es = SW.storage.loadDay('2026-11-03').entries;
   assertEqual(es.length, 1);
   assertEqual(es[0].cat, 'verein');
@@ -158,8 +158,86 @@ test('Löschen entfernt den Eintrag', () => {
   SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
   SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
   SW.log.openEditorById('2026-11-03', 'e1');
-  buehne.querySelector('.editor [name=loeschen]').click();
+  document.querySelector('.editor [name=loeschen]').click();
   assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 0);
+});
+
+suite('Protokoll: Bedienbarkeit');
+
+test('Protokollzeilen sind echte Knoepfe und per Tastatur erreichbar', () => {
+  // U2: div mit Klick-Handler ist fuer Tastatur und Screenreader nichts.
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  const zeile = buehne.querySelector('.log-row');
+  assertEqual(zeile.tagName, 'BUTTON');
+  assertEqual(zeile.type, 'button');
+  assert(zeile.getAttribute('aria-label'), 'aria-label fehlt');
+});
+
+test('Enter auf einer Protokollzeile oeffnet den Editor', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  buehne.querySelector('.log-row').click();
+  assert(document.querySelector('.editor'), 'Editor nicht geoeffnet');
+  document.querySelector('.editor [name=abbrechen]').click();
+});
+
+test('der Editor ist ein Dialog und bekommt den Fokus', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  SW.log.openEditorById('2026-11-03', 'e1');
+  const box = document.querySelector('.editor');
+  assertEqual(box.getAttribute('role'), 'dialog');
+  assertEqual(box.getAttribute('aria-modal'), 'true');
+  assert(box.getAttribute('aria-label') || box.querySelector('h3'), 'Dialog ohne Titel');
+  assert(box.contains(document.activeElement), 'Fokus nicht im Dialog: ' + document.activeElement.tagName);
+  box.querySelector('[name=abbrechen]').click();
+});
+
+test('Escape schliesst den Editor und gibt den Fokus zurueck', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  const zeile = buehne.querySelector('.log-row');
+  zeile.focus();
+  zeile.click();
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assertEqual(document.querySelector('.editor'), null);
+  assertEqual(document.activeElement, zeile);
+});
+
+test('der Editor bietet den Folgetag fuer Zeitraeume ueber Mitternacht', () => {
+  // F2: 23:40-00:20 muss sich eintragen lassen.
+  clearSw();
+  SW.log.render(buehne, SW.log.model('2026-11-03', null, CFG));
+  SW.log.openEditor('2026-11-03', null);
+  const box = document.querySelector('.editor');
+  const folgetag = box.querySelector('[name=folgetag]');
+  assert(folgetag, 'Folgetag-Schalter fehlt');
+  box.querySelector('[name=cat]').value = 'umbau';
+  box.querySelector('[name=von]').value = '23:40';
+  box.querySelector('[name=bis]').value = '00:20';
+  folgetag.checked = true;
+  box.querySelector('[name=speichern]').click();
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 1);
+  assertEqual(SW.storage.loadDay('2026-11-04').entries.length, 1);
+});
+
+test('ohne Folgetag bleibt ein Ende vor dem Start ein Fehler', () => {
+  clearSw();
+  SW.log.render(buehne, SW.log.model('2026-11-03', null, CFG));
+  SW.log.openEditor('2026-11-03', null);
+  const box = document.querySelector('.editor');
+  box.querySelector('[name=von]').value = '23:40';
+  box.querySelector('[name=bis]').value = '00:20';
+  box.querySelector('[name=speichern]').click();
+  const fehler = box.querySelector('.fehler');
+  assert(fehler && fehler.textContent.length > 0, 'keine Fehlermeldung');
+  assertEqual(SW.storage.loadDay('2026-11-03'), null);
+  box.querySelector('[name=abbrechen]').click();
 });
 
 runAll();

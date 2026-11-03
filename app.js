@@ -121,9 +121,90 @@
     document.addEventListener(ev, function () { melde(SW.clock.touch(jetzt())); }, { passive: true });
   });
 
+  /* ── Service Worker: Registrierung und Update-Hinweis ─────────────
+     Cache-First heißt: eine offene App übernimmt eine neue Version nicht von
+     selbst. Also wird sie gemeldet — und erst auf Zustimmung übernommen.
+     Nie von alleine neu laden: der Nutzer könnte gerade etwas eintippen oder
+     eine Uhr laufen haben. */
+
+  // Beim Laden gemerkt: steuerte schon ein Worker diese Seite? Nur dann ist
+  // ein controllerchange ein echter Wechsel. Beim allerersten Besuch
+  // übernimmt ein frischer Worker, ohne dass sich etwas geändert hätte.
+  const hatteController = ('serviceWorker' in navigator) && !!navigator.serviceWorker.controller;
+  let ladeNeu = false;
+  let updateStreifen = null;
+  let letztePruefung = 0;
+
+  // Ein controllerchange darf genau einmal neu laden, und nur wenn vorher
+  // schon ein Worker da war — sonst lädt die Seite im Kreis.
+  function darfNeuLaden(hatteVorherController, schonAmLaden) {
+    return !!hatteVorherController && !schonAmLaden;
+  }
+
+  // Der Hinweis: ein Banner mit einem Knopf. Wegklickbar wie jeder andere;
+  // wird er weggeklickt, darf er beim nächsten Fund wieder erscheinen.
+  function updateHinweis(reg) {
+    if (!reg || !reg.waiting) return null;
+    if (updateStreifen && updateStreifen.isConnected) return updateStreifen;
+
+    const streifen = SW.ui.banner('Neue Version verfügbar', 'remind');
+    const knopf = document.createElement('button');
+    knopf.type = 'button';
+    // Eigenes kleines Element: app.css kennt keinen Textknopf im Banner.
+    // Die Farben erbt er vom Streifen, die Form ist die des Schließen-Knopfes.
+    knopf.style.cssText = 'flex:none;border:0;cursor:pointer;border-radius:8px;'
+      + 'padding:5px 10px;background:rgba(0,0,0,.15);color:inherit;'
+      + 'font:inherit;font-size:.72rem;font-weight:700;';
+    knopf.textContent = 'Aktualisieren';
+    knopf.addEventListener('click', function () {
+      if (knopf.disabled) return;
+      knopf.disabled = true;
+      knopf.textContent = 'Aktualisiere …';
+      // Erst jetzt darf der wartende Worker übernehmen. Das Neuladen macht
+      // der controllerchange-Horcher — genau einmal.
+      if (reg.waiting) reg.waiting.postMessage({ typ: 'SKIP_WAITING' });
+    });
+    streifen.insertBefore(knopf, streifen.querySelector('.banner-close'));
+    updateStreifen = streifen;
+    return streifen;
+  }
+
   if ('serviceWorker' in navigator) {
+    // Der Wechsel läuft immer über controllerchange — ob der Nutzer
+    // zugestimmt hat oder der Browser von selbst gewechselt ist.
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!darfNeuLaden(hatteController, ladeNeu)) return;
+      ladeNeu = true;
+      window.location.reload();
+    });
+
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').catch(function () { /* ohne SW läuft die App weiter */ });
+      navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        // Wartet schon einer? Dann wurde die neue Version bei einem früheren
+        // Besuch fertig installiert.
+        updateHinweis(reg);
+
+        reg.addEventListener('updatefound', function () {
+          const neu = reg.installing;
+          if (!neu) return;
+          neu.addEventListener('statechange', function () {
+            // 'installed' und die Seite hat schon einen Worker: ein Update.
+            // Ohne Controller ist es der Erstbesuch — da gibt es nichts zu
+            // melden. Scheitert die Installation, kommt 'redundant' statt
+            // 'installed' und es erscheint zu Recht kein Hinweis.
+            if (neu.state === 'installed' && navigator.serviceWorker.controller) updateHinweis(reg);
+          });
+        });
+
+        // Eine wochenlang offene App fragt von selbst kaum nach. Beim
+        // Zurückkommen also nachsehen, höchstens aber alle 15 Minuten.
+        document.addEventListener('visibilitychange', function () {
+          if (document.hidden) return;
+          if (Date.now() - letztePruefung < 15 * 60 * 1000) return;
+          letztePruefung = Date.now();
+          reg.update().catch(function () { /* kein Netz: beim nächsten Mal */ });
+        });
+      }).catch(function () { /* ohne SW läuft die App weiter */ });
     });
   }
 
@@ -156,7 +237,9 @@
     versteckeStartbild: versteckeStartbild,
     zeichne: zeichne,
     tick: function () { return zeichne(true); },
-    tauntState: function () { return letzterZustand; }
+    tauntState: function () { return letzterZustand; },
+    updateHinweis: updateHinweis,
+    darfNeuLaden: darfNeuLaden
   };
 
   pruefe();

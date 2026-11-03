@@ -25,8 +25,10 @@ SW.history = (function () {
 
   function heuteKey() { return SW.model.dateKeyOf(new Date()); }
 
-  function tagZeile(dateKey, loadDay, config, heute) {
-    const rec = loadDay(dateKey);
+  // rec darf mitgegeben werden, damit derselbe Tag nicht zweimal aus dem
+  // Speicher gelesen und geparst wird.
+  function tagZeile(dateKey, loadDay, config, heute, recVorab) {
+    const rec = recVorab !== undefined ? recVorab : loadDay(dateKey);
     const st = SW.model.dayStatus(dateKey, rec, config);
     // Ein Tag, der noch kommt, ist nicht verpasst — er ist offen. Sonst
     // sieht die Woche am Montag schon nach Pechsträhne aus.
@@ -92,7 +94,7 @@ SW.history = (function () {
     for (let d = 1; d <= anzahl; d++) {
       const dateKey = ym + '-' + (d < 10 ? '0' + d : d);
       const rec = loadDay(dateKey);
-      const zeile = tagZeile(dateKey, loadDay, config, bezug);
+      const zeile = tagZeile(dateKey, loadDay, config, bezug, rec);
       days.push(zeile);
       if (zeile.fulfilled) fulfilledCount++;
       if (zeile.verpasst) verpasst++;

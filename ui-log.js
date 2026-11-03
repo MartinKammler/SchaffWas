@@ -80,8 +80,15 @@ SW.log = (function () {
       liste.appendChild(el('p', 'empty', 'Kein Eintrag an diesem Tag. Nichts getan oder nicht gestempelt?'));
     } else {
       m.rows.forEach(r => {
-        const zeile = el('div', 'log-row');
+        // Echter Knopf statt div: sonst ist die Zeile weder mit der Tastatur
+        // erreichbar noch für einen Screenreader als Aktion erkennbar.
+        const zeile = el('button', 'log-row');
+        zeile.type = 'button';
         zeile.dataset.id = r.id;
+        zeile.setAttribute('aria-label',
+          `${r.name}, ${r.from} bis ${r.to}, ${SW.ui.fmt(r.minutes)}`
+          + (r.srcLabel ? ', ' + r.srcLabel : '') + ' — bearbeiten');
+
         const dot = el('span', 'dot');
         dot.style.background = r.color;
         zeile.appendChild(dot);
@@ -100,7 +107,10 @@ SW.log = (function () {
     root.appendChild(el('p', 'log-summe', 'Summe: ' + SW.ui.fmtHM(m.total)));
   }
 
+  let schliesseDialog = null;
+
   function schliesseEditor() {
+    if (schliesseDialog) { const f = schliesseDialog; schliesseDialog = null; f(); }
     const alt = document.querySelector('.editor');
     if (alt && alt.parentNode) alt.parentNode.removeChild(alt);
   }
@@ -115,7 +125,6 @@ SW.log = (function () {
   function openEditor(dateKey, entry) {
     schliesseEditor();
     const config = SW.storage.loadConfig();
-    const root = wurzel();
     const box = el('div', 'editor');
 
     box.appendChild(el('h3', null, entry ? 'Eintrag ändern' : 'Zeit nachtragen'));
@@ -148,17 +157,30 @@ SW.log = (function () {
     bis.value = entry ? SW.ui.fmtTime(entry.end) : '';
     box.appendChild(bis);
 
+    // Der Normalfall sind zwei Uhrzeiten am selben Tag. Für den Sonderfall
+    // über Mitternacht (23:40–00:20) reicht ein Schalter; ein zweites
+    // Datumsfeld wäre für diesen einen Fall zu viel (Spec §6.4.3).
+    const folgeLabel = el('label', 'schalter');
+    const folgetag = document.createElement('input');
+    folgetag.type = 'checkbox';
+    folgetag.name = 'folgetag';
+    folgetag.checked = !!(entry && SW.model.dateKeyOf(entry.end) !== dateKey);
+    folgeLabel.appendChild(folgetag);
+    folgeLabel.appendChild(el('span', null, 'Ende am Folgetag'));
+    box.appendChild(folgeLabel);
+
     const speichern = el('button', 'primaer', 'Speichern');
     speichern.name = 'speichern';
     speichern.addEventListener('click', function () {
       fehler.style.display = 'none';
-      const startIso = dateKey + 'T' + von.value + ':00';
-      const endIso = dateKey + 'T' + bis.value + ':00';
       if (!von.value || !bis.value) {
         fehler.textContent = 'Von und Bis müssen gesetzt sein.';
         fehler.style.display = '';
         return;
       }
+      const endeTag = folgetag.checked ? SW.model.shiftDays(dateKey, 1) : dateKey;
+      const startIso = dateKey + 'T' + von.value + ':00';
+      const endIso = endeTag + 'T' + bis.value + ':00';
       const jetzt = new Date();
       const res = entry
         ? SW.clock.editEntry(dateKey, entry.id, {
@@ -200,7 +222,16 @@ SW.log = (function () {
     abbrechen.addEventListener('click', schliesseEditor);
     box.appendChild(abbrechen);
 
-    root.appendChild(box);
+    // Der Editor ist ein Dialog (position: fixed) und gehoert an den body —
+    // nicht in den Screen-Container, der ausgeblendet sein kann.
+    document.body.appendChild(box);
+    schliesseDialog = SW.ui.dialogOeffnen(box, {
+      titel: entry ? 'Eintrag ändern' : 'Zeit nachtragen',
+      zu: function () {
+        const alt = document.querySelector('.editor');
+        if (alt && alt.parentNode) alt.parentNode.removeChild(alt);
+      }
+    });
     return box;
   }
 

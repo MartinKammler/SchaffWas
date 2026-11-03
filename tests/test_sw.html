@@ -29,6 +29,97 @@ test('Aufräumen löscht nur eigene Caches', () => {
   assertEqual(swShouldDeleteCache('irgendwas'), false);
 });
 
+suite('Service Worker: Shell-Pfade');
+
+test('swIstShellPfad erkennt die Shell unter einem Unterpfad', () => {
+  assertEqual(swIstShellPfad('/SchaffWas/index.html'), true);
+  assertEqual(swIstShellPfad('/SchaffWas/app.css'), true);
+  assertEqual(swIstShellPfad('/SchaffWas/Logo-icon.png'), true);
+  assertEqual(swIstShellPfad('/SchaffWas/'), true);
+});
+
+test('swIstShellPfad verwechselt keine ähnlichen Namen', () => {
+  assertEqual(swIstShellPfad('/SchaffWas/Logo-icon-irgendwas.png'), false);
+  assertEqual(swIstShellPfad('/SchaffWas/daten.json'), false);
+  assertEqual(swIstShellPfad('/SchaffWas/unterordner/fremd.js'), false);
+  // Kein Teiltreffer mitten im Dateinamen.
+  assertEqual(swIstShellPfad('/SchaffWas/mein-app.js'), false);
+});
+
+suite('Service Worker: Installation');
+
+// Minimaler Cache-Ersatz. `dateien` ist die Liste, die addAll annehmen soll;
+// `fehler` lässt addAll scheitern (Netz weg, Datei fehlt, Quota).
+function fakeCache(opt) {
+  const o = opt || {};
+  const drin = new Set(o.vorhanden || []);
+  return {
+    aufrufe: [],
+    addAll: function (liste) {
+      this.aufrufe.push(liste);
+      if (o.fehler) return Promise.reject(new Error(o.fehler));
+      (o.nimmNur || liste).forEach(p => drin.add(p));
+      return Promise.resolve();
+    },
+    match: function (p) { return Promise.resolve(drin.has(p) ? { ok: true } : undefined); }
+  };
+}
+
+test('swFehlendeShellDateien meldet nichts bei vollständigem Cache', async () => {
+  const cache = fakeCache({ vorhanden: SW_APP_SHELL });
+  assertDeepEqual(await swFehlendeShellDateien(cache), []);
+});
+
+test('swFehlendeShellDateien nennt genau die fehlenden Einträge', async () => {
+  const rest = SW_APP_SHELL.filter(p => p !== './app.css' && p !== './Logo.png');
+  const cache = fakeCache({ vorhanden: rest });
+  assertDeepEqual(await swFehlendeShellDateien(cache), ['./app.css', './Logo.png']);
+});
+
+test('eine vollständige Installation gelingt', async () => {
+  const cache = fakeCache();
+  assertEqual(await swInstalliereShell(cache), true);
+  assertDeepEqual(cache.aufrufe[0], SW_APP_SHELL);
+});
+
+test('scheitert addAll, scheitert die Installation', async () => {
+  const cache = fakeCache({ fehler: 'Netz weg' });
+  let abgelehnt = false;
+  await swInstalliereShell(cache).then(() => {}, () => { abgelehnt = true; });
+  assert(abgelehnt, 'swInstalliereShell hat den Fehler verschluckt');
+});
+
+test('ein unvollständiger Cache gilt als Installationsfehler', async () => {
+  // addAll meldet Erfolg, aber eine Datei liegt nicht im Cache (z. B. weil
+  // der Speicher zwischendurch aufgeräumt wurde).
+  const cache = fakeCache({ nimmNur: SW_APP_SHELL.filter(p => p !== './index.html') });
+  let fehler = null;
+  await swInstalliereShell(cache).then(() => {}, e => { fehler = e; });
+  assert(fehler, 'halbe Shell wurde als Erfolg gewertet');
+  assert(/index\.html/.test(fehler.message), 'Fehler nennt die Datei nicht: ' + fehler.message);
+});
+
+suite('Service Worker: Lebenszyklus');
+
+test('der Install-Handler übergeht keinen Fehler und drängelt nicht', async () => {
+  const src = await (await fetch('../sw.js')).text();
+  const von = src.indexOf("addEventListener('install'");
+  // Bis zum nächsten Handler, egal in welcher Reihenfolge sie stehen.
+  const bis = src.indexOf('self.addEventListener', von + 1);
+  assert(von !== -1 && bis > von, 'Install-Handler nicht gefunden');
+  const block = src.slice(von, bis);
+  assert(block.indexOf('skipWaiting') === -1, 'der Install ruft noch skipWaiting');
+  assert(block.indexOf('catch') === -1, 'der Install verschluckt den Fehler noch');
+});
+
+test('das Warten wird nur auf Nachricht hin übersprungen', async () => {
+  const src = await (await fetch('../sw.js')).text();
+  assert(/addEventListener\('message'/.test(src), 'kein message-Handler in sw.js');
+  assert(/SKIP_WAITING/.test(src), 'SKIP_WAITING kommt in sw.js nicht vor');
+  assert(/skipWaiting/.test(src.slice(src.indexOf("addEventListener('message'"))),
+    'der message-Handler ruft kein skipWaiting');
+});
+
 suite('Service Worker: App-Shell');
 
 test('APP_SHELL enthält alle App-Dateien', () => {

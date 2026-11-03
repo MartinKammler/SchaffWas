@@ -236,7 +236,14 @@ SW.settings = (function () {
     jsonKnopf.addEventListener('click', function () {
       const res = applyJsonText(json.value);
       if (!res.ok) { jsonFehler.textContent = res.errors.join(' '); return; }
-      render(root, SW.storage.loadConfig(), 'JSON übernommen.');
+      // Warnungen sind keine Fehler, aber auch nichts zum Verschweigen:
+      // ein Tippfehler von Hand (dayTarget statt dayTargets) wirkt sonst
+      // wie eine Einstellung, die nichts bewirkt.
+      const warnung = res.warnings && res.warnings.length
+        ? ' Hinweis: ' + res.warnings.join(' ')
+        : '';
+      render(root, SW.storage.loadConfig(),
+        'JSON übernommen: ' + res.uebernommen.join(', ') + '. Alles andere blieb, wie es war.' + warnung);
     });
     root.appendChild(jsonKnopf);
 
@@ -277,14 +284,28 @@ SW.settings = (function () {
 
   /* ── JSON und Sicherung ─────────────────────────────────────── */
 
+  // Eingefügtes JSON wird auf die bestehende Konfiguration gelegt, nicht an
+  // ihre Stelle. Sonst löscht ein eingefügtes {"dayTargets": …} sämtliche
+  // eigenen Kategorien, und ihre Historie liest sich danach als "Unbekannt".
+  // Wer Kategorien wirklich ersetzen will, gibt `categories` mit an.
   function applyJsonText(text) {
     let obj;
     try { obj = JSON.parse(text); }
     catch (e) { return { ok: false, errors: ['Kein gültiges JSON: ' + e.message] }; }
-    const pruefung = SW.storage.validateBackup({ config: obj });
-    if (!pruefung.ok) return { ok: false, errors: pruefung.errors };
-    const res = SW.storage.saveConfig(obj);
-    return res.ok ? { ok: true, errors: [] } : { ok: false, errors: [res.error] };
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      return { ok: false, errors: ['Das JSON muss ein Objekt sein.'] };
+    }
+
+    const uebernommen = Object.keys(obj);
+    const zusammen = Object.assign({}, SW.storage.loadConfig(), obj);
+
+    const pruefung = SW.storage.validateBackup({ config: zusammen });
+    const warnungen = pruefung.warnings || [];
+    if (!pruefung.ok) return { ok: false, errors: pruefung.errors, warnings: warnungen, uebernommen: [] };
+    const res = SW.storage.saveConfig(zusammen);
+    return res.ok
+      ? { ok: true, errors: [], warnings: warnungen, uebernommen: uebernommen }
+      : { ok: false, errors: [res.error], warnings: warnungen, uebernommen: [] };
   }
 
   function applyBackupText(text) {
@@ -370,7 +391,13 @@ SW.settings = (function () {
     return 'Letzter Export: vor ' + tage + (tage === 1 ? ' Tag.' : ' Tagen.');
   }
 
-  function requestPersist() {
+  // Einmal je Sitzung fragen und die Antwort merken: der Einstellungs-Screen
+  // wird bei jeder Änderung neu aufgebaut, und jedes Mal den Browser um
+  // dauerhaften Speicher zu bitten ist sinnlos.
+  let persistZusage = null;
+
+  // Fragt den Browser tatsaechlich.
+  function persistStatus() {
     try {
       if (!navigator.storage || typeof navigator.storage.persist !== 'function') {
         return Promise.resolve('unbekannt');
@@ -381,6 +408,12 @@ SW.settings = (function () {
     } catch (e) {
       return Promise.resolve('unbekannt');
     }
+  }
+
+  // Die Antwort aendert sich innerhalb einer Sitzung nicht mehr.
+  function requestPersist() {
+    if (!persistZusage) persistZusage = persistStatus();
+    return persistZusage;
   }
 
   function refresh() { render(wurzel(), SW.storage.loadConfig()); }
@@ -394,6 +427,7 @@ SW.settings = (function () {
     bestaetigeImport: bestaetigeImport,
     downloadBackup: downloadBackup,
     exportStand: exportStand,
+    persistStatus: persistStatus,
     requestPersist: requestPersist,
     refresh: refresh
   };

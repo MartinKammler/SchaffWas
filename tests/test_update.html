@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Update-Hinweis – Unit Tests</title>
+</head>
+<body>
+<h1>Update-Hinweis – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<!-- Fixture wie in index.html, damit app.js sich verdrahten kann. -->
+<div id="fixture" style="position:absolute;left:-9999px;top:0">
+  <div id="splash">
+    <img id="splash-sau" src="../Logo.png" alt="Schaff was!">
+    <p id="splash-zeile">Stempeluhr gegen den inneren Schweinehund</p>
+  </div>
+  <main>
+    <section id="screen-main" class="screen active"></section>
+    <section id="screen-log" class="screen"></section>
+    <section id="screen-history" class="screen"></section>
+    <section id="screen-settings" class="screen"></section>
+  </main>
+  <nav>
+    <button id="nav-main" data-screen="screen-main" class="active">Heute</button>
+    <button id="nav-log" data-screen="screen-log">Protokoll</button>
+    <button id="nav-history" data-screen="screen-history">Historie</button>
+    <button id="nav-settings" data-screen="screen-settings">Einstellungen</button>
+  </nav>
+</div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../clock.js"></script>
+<script src="../taunts.js"></script>
+<script src="../ui.js"></script>
+<script src="../ui-main.js"></script>
+<script src="../ui-log.js"></script>
+<script src="../ui-history.js"></script>
+<script src="../ui-settings.js"></script>
+<script src="_runner.js"></script>
+<script>
+Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
+</script>
+<script src="../app.js"></script>
+<script>
+// Registration-Ersatz: nur das, was der Hinweis anfasst.
+function fakeReg(opt) {
+  const o = opt || {};
+  const nachrichten = [];
+  return {
+    nachrichten: nachrichten,
+    waiting: o.ohneWartenden ? null : { postMessage: m => nachrichten.push(m) },
+    update: () => Promise.resolve()
+  };
+}
+
+function hinweis() { return document.querySelector('.banner'); }
+function knopf() {
+  const b = hinweis();
+  return b ? b.querySelector('button:not(.banner-close)') : null;
+}
+
+suite('Update-Hinweis: Anzeige');
+
+test('ein wartender Worker bringt einen Hinweis mit Knopf', () => {
+  SW.ui.clearBanner();
+  SW.app.updateHinweis(fakeReg());
+  const b = hinweis();
+  assert(b, 'kein Hinweis erschienen');
+  assert(/Neue Version verfügbar/.test(b.textContent), 'Text fehlt: ' + b.textContent);
+  assert(knopf(), 'kein Aktualisieren-Knopf');
+  assertEqual(knopf().textContent, 'Aktualisieren');
+  // Der Hinweis bleibt wegklickbar wie jeder andere Banner.
+  assert(b.querySelector('.banner-close'), 'Schließen-Knopf fehlt');
+  SW.ui.clearBanner();
+});
+
+test('ohne wartenden Worker erscheint kein Hinweis', () => {
+  SW.ui.clearBanner();
+  SW.app.updateHinweis(fakeReg({ ohneWartenden: true }));
+  assertEqual(hinweis(), null);
+});
+
+test('zweimal gemeldet heißt nicht zwei Hinweise', () => {
+  SW.ui.clearBanner();
+  const reg = fakeReg();
+  SW.app.updateHinweis(reg);
+  SW.app.updateHinweis(reg);
+  assertEqual(document.querySelectorAll('.banner').length, 1);
+  assertEqual(hinweis().querySelectorAll('button').length, 2); // Aktualisieren + Schließen
+  SW.ui.clearBanner();
+});
+
+test('weggeklickt darf der Hinweis später wieder kommen', () => {
+  SW.ui.clearBanner();
+  const reg = fakeReg();
+  SW.app.updateHinweis(reg);
+  hinweis().querySelector('.banner-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  assertEqual(hinweis(), null);
+  SW.app.updateHinweis(reg);
+  assert(hinweis(), 'der Hinweis kam nicht wieder');
+  SW.ui.clearBanner();
+});
+
+suite('Update-Hinweis: Zustimmung');
+
+test('der Knopf schickt SKIP_WAITING an den wartenden Worker', () => {
+  SW.ui.clearBanner();
+  const reg = fakeReg();
+  SW.app.updateHinweis(reg);
+  knopf().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  assertEqual(reg.nachrichten.length, 1);
+  assertEqual(reg.nachrichten[0].typ, 'SKIP_WAITING');
+  SW.ui.clearBanner();
+});
+
+test('zweimal getippt schickt nicht zweimal', () => {
+  SW.ui.clearBanner();
+  const reg = fakeReg();
+  SW.app.updateHinweis(reg);
+  const k = knopf();
+  k.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  k.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  assertEqual(reg.nachrichten.length, 1);
+  assert(k.disabled, 'der Knopf blieb tippbar');
+  SW.ui.clearBanner();
+});
+
+suite('Update-Hinweis: Neuladen');
+
+test('der erste Worker löst kein Neuladen aus', () => {
+  // Beim allerersten Besuch übernimmt ein frischer Worker die Seite — da ist
+  // nichts ersetzt worden, ein Neuladen wäre grundlos.
+  assertEqual(SW.app.darfNeuLaden(false, false), false);
+});
+
+test('ein ersetzter Worker löst genau einmal Neuladen aus', () => {
+  assertEqual(SW.app.darfNeuLaden(true, false), true);
+  // Schon am Neuladen: kein zweites Mal, sonst dreht sich die Seite im Kreis.
+  assertEqual(SW.app.darfNeuLaden(true, true), false);
+});
+
+runAll();
+</script>
+</body>
+</html>

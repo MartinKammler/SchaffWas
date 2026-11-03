@@ -8,7 +8,7 @@
 <h1>Einstellungen – Unit Tests</h1>
 <div id="output"></div>
 <div id="summary"></div>
-<div id="buehne" style="display:none"></div>
+<div id="buehne" style="position:absolute;left:-9999px;top:0"></div>
 
 <script src="../version.js"></script>
 <script src="../storage.js"></script>
@@ -175,18 +175,18 @@ test('render zeigt ohne Export einen deutlichen Hinweis', () => {
   assert(/noch nie/.test(buehne.querySelector('.export-stand').textContent), 'Hinweis fehlt');
 });
 
-test('requestPersist kommt ohne Storage-API zurecht', async () => {
+test('persistStatus kommt ohne Storage-API zurecht', async () => {
   const echt = navigator.storage;
   try {
     Object.defineProperty(navigator, 'storage', { value: undefined, configurable: true });
-    assertEqual(await SW.settings.requestPersist(), 'unbekannt');
+    assertEqual(await SW.settings.persistStatus(), 'unbekannt');
   } finally {
     Object.defineProperty(navigator, 'storage', { value: echt, configurable: true });
   }
 });
 
-test('requestPersist meldet einen Status, wenn die API da ist', async () => {
-  const s = await SW.settings.requestPersist();
+test('persistStatus meldet einen Status, wenn die API da ist', async () => {
+  const s = await SW.settings.persistStatus();
   assert(['dauerhaft', 'nicht garantiert', 'unbekannt'].indexOf(s) !== -1, 'Status: ' + s);
 });
 
@@ -288,6 +288,85 @@ test('ein Schreibfehler beim Stilllegen einer Kategorie wird gemeldet', () => {
   const hinweis2 = buehne.querySelector('.set-hinweis');
   assert(hinweis2 && /voll oder gesperrt/.test(hinweis2.textContent),
     'Fehler nicht angezeigt: ' + (hinweis2 ? hinweis2.textContent : 'kein Hinweis'));
+});
+
+suite('Einstellungen: Teil-JSON');
+
+test('ein eingefuegtes Teil-JSON loescht keine eigenen Kategorien', () => {
+  // Ohne Zusammenfuehren ersetzt ein eingefuegtes {"dayTargets":...} die
+  // ganze Config; eigene Kategorien waeren weg und ihre Historie
+  // 'Unbekannt'.
+  clearSw();
+  const c = cfg();
+  c.categories.push({ id: 'sport', name: 'Sport', color: '#38c172', minMinutes: 30, minPeriod: 'day', active: true });
+  SW.storage.saveConfig(c);
+
+  const res = SW.settings.applyJsonText('{"dayTargets": {"mon": 240, "tue": 240, "wed": 240, "thu": 240, "fri": 240, "sat": 120, "sun": 0}}');
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+
+  const danach = SW.storage.loadConfig();
+  assertEqual(danach.dayTargets.sat, 120);
+  assertEqual(danach.categories.filter(x => x.id === 'sport').length, 1);
+  assertEqual(danach.categories.length, 5);
+});
+
+test('ein vollstaendiges JSON ersetzt die Kategorien weiterhin', () => {
+  clearSw();
+  const c = cfg();
+  c.categories = [{ id: 'nur-eine', name: 'Nur eine', color: '#f0b429', minMinutes: 30, minPeriod: 'day', active: true }];
+  assertEqual(SW.settings.applyJsonText(JSON.stringify(c)).ok, true);
+  assertEqual(SW.storage.loadConfig().categories.length, 1);
+});
+
+test('applyJsonText meldet, welche Felder uebernommen wurden', () => {
+  clearSw();
+  const res = SW.settings.applyJsonText('{"reminderMinutes": 20}');
+  assertEqual(res.ok, true);
+  assertDeepEqual(res.uebernommen, ['reminderMinutes']);
+  assertEqual(SW.storage.loadConfig().reminderMinutes, 20);
+});
+
+test('requestPersist fragt den Browser nur einmal je Sitzung', async () => {
+  // Erst einmal regulaer fragen, damit die Antwort steht.
+  await SW.settings.requestPersist();
+
+  const echt = navigator.storage && navigator.storage.persist;
+  if (!echt) { assert(true, 'keine Storage-API vorhanden'); return; }
+
+  let aufrufe = 0;
+  navigator.storage.persist = function () { aufrufe++; return Promise.resolve(true); };
+  let antwort;
+  try {
+    const p1 = SW.settings.requestPersist();
+    const p2 = SW.settings.requestPersist();
+    assertEqual(p1, p2, 'zwei verschiedene Zusagen statt einer gemerkten');
+    antwort = await p1;
+  } finally {
+    navigator.storage.persist = echt;
+  }
+  assertEqual(aufrufe, 0, 'der Browser wurde erneut gefragt');
+  assert(['dauerhaft', 'nicht garantiert', 'unbekannt'].indexOf(antwort) !== -1, 'Antwort: ' + antwort);
+});
+
+suite('Einstellungen: Warnungen');
+
+test('ein Tippfehler im JSON wird benannt statt stillschweigend ignoriert', () => {
+  clearSw();
+  const res = SW.settings.applyJsonText('{"dayTarget": {"mon": 120}}');
+  assertEqual(res.ok, true);
+  assert(res.warnings && res.warnings.length > 0, 'keine Warnung');
+  assert(/dayTarget/.test(res.warnings.join(' ')), 'Warnung nennt das Feld nicht: ' + res.warnings.join(' '));
+});
+
+test('render zeigt die Warnungen zum uebernommenen JSON an', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="json"]').value = '{"dayTarget": {"mon": 120}}';
+  buehne.querySelector('[name="json-uebernehmen"]').click();
+  const hinweis = buehne.querySelector('.set-hinweis');
+  assert(hinweis && /unbekanntes Feld/.test(hinweis.textContent),
+    'Warnung nicht angezeigt: ' + (hinweis ? hinweis.textContent : 'kein Hinweis'));
 });
 
 runAll();

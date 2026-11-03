@@ -95,7 +95,6 @@ h2 { font-size: 1.05rem; margin: 2px 0 12px; }
   margin: 0; font-size: .82rem; line-height: 1.35;
   color: #ffb454; font-style: italic;
 }
-.hero.ok ~ * .taunt, .kopf .taunt { }
 
 /* ── Tageszähler ─────────────────────────────────────────────── */
 
@@ -229,7 +228,14 @@ input, select {
 .log-row {
   display: flex; align-items: center; gap: 9px; cursor: pointer;
   padding: 9px 10px; border-radius: 12px; margin-bottom: 7px;
+  width: 100%; text-align: left; font: inherit; color: inherit;
   background: var(--flaeche); border: 1px solid var(--linie);
+}
+
+/* Fokus muss sichtbar sein — sonst ist Tastaturbedienung Blindflug. */
+:focus-visible {
+  outline: 2px solid var(--akzent);
+  outline-offset: 2px;
 }
 .log-summe { font-size: .72rem; opacity: .6; text-align: right; }
 
@@ -243,6 +249,8 @@ input, select {
   box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
 }
 .editor h3 { margin: 0 0 12px; font-size: .95rem; }
+.editor .schalter { display: flex; align-items: center; gap: 7px; margin: 2px 0 12px; font-size: .74rem; }
+.editor .schalter input { width: auto; margin: 0; }
 .editor select, .editor input { display: block; width: 100%; margin-bottom: 9px; }
 .editor button {
   display: block; width: 100%; margin-bottom: 8px; cursor: pointer;

@@ -17,14 +17,26 @@ try {
 const CACHE_NAME = (typeof SW_CACHE_NAME === 'string') ? SW_CACHE_NAME : null;
 const APP_SHELL = (typeof SW_APP_SHELL !== 'undefined') ? SW_APP_SHELL : [];
 
+/* Installation: entweder liegt die App-Shell vollständig im Cache — oder die
+   Installation ist gescheitert. Kein catch: lehnt das Promise ab, verwirft der
+   Browser diesen Worker, der alte bleibt aktiv und sein vollständiger Cache
+   stehen. Würde hier geschluckt, käme der halbe Worker durch und würde im
+   activate den letzten brauchbaren Cache löschen — die App startete offline
+   nicht mehr.
+   Auch kein skipWaiting: der neue Worker wartet, bis der Nutzer im Hinweis
+   „Neue Version verfügbar" zustimmt (app.js schickt dann SKIP_WAITING). Sonst
+   würde mitten im Tippen oder bei laufender Uhr gewechselt. */
 self.addEventListener('install', event => {
-  if (!CACHE_NAME) return;
+  if (!CACHE_NAME || typeof swInstalliereShell !== 'function') return;
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-      .catch(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => swInstalliereShell(cache, APP_SHELL))
   );
+});
+
+// Das Warten endet nur auf Zustimmung des Nutzers hin, nie von selbst.
+self.addEventListener('message', event => {
+  const typ = event.data && event.data.typ;
+  if (typ === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
@@ -38,12 +50,9 @@ self.addEventListener('activate', event => {
   );
 });
 
+// Dieselbe Zuordnung wie beim Installieren — eine Quelle in sw-shell.js.
 function istShell(url) {
-  const pfad = url.pathname;
-  return APP_SHELL.some(p => {
-    const datei = p.replace('./', '');
-    return datei === '' ? pfad.endsWith('/') : pfad.endsWith('/' + datei);
-  });
+  return typeof swIstShellPfad === 'function' && swIstShellPfad(url.pathname, APP_SHELL);
 }
 
 self.addEventListener('fetch', event => {

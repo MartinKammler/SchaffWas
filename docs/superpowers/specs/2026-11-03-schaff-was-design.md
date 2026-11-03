@@ -119,7 +119,13 @@ Tag durch, und die 4 Stunden stehen abends da. Mehr nicht.
   - Vanilla HTML/CSS/JS, **kein Build-Schritt, kein Framework, kein npm zur
     Laufzeit**.
   - `manifest.json` + `sw.js` (Service Worker) für Installierbarkeit und
-    Offline-Betrieb.
+    Offline-Betrieb. **Eine unvollständige App-Shell ist ein
+    Installationsfehler:** nach `addAll` wird nachgeprüft, ob wirklich alles im
+    Cache liegt; fehlt etwas, lehnt das Promise ab, der alte Worker bleibt
+    aktiv und sein vollständiger Cache stehen — sonst startet die App offline
+    nicht mehr. Der neue Worker **drängelt nicht**: kein `skipWaiting` beim
+    Installieren, stattdessen meldet die Seite "Neue Version verfügbar" mit
+    einem Knopf und lädt erst auf Tipp genau einmal neu.
   - `version.js` als einzige Quelle der App-Version; der Service-Worker leitet
     seinen `CACHE_NAME` daraus ab (`importScripts('./version.js')`), genau wie
     bei LifeguardClock.
@@ -256,7 +262,13 @@ die gemessen werden soll (A6). Deshalb gilt:
   stempeln").
 - Geänderte und nachgetragene Einträge werden als `manual` markiert und bleiben
   im Protokoll als solche erkennbar.
-- Überlappungsprüfung wie in 6.1.
+- Überlappungsprüfung wie in 6.1 — einschließlich der laufenden Uhr, die
+  noch in keinem Tagesobjekt steht.
+- Ein Nachtrag darf über Mitternacht reichen. Im Editor gibt es dafür den
+  Schalter **"Ende am Folgetag"**; ein zweites Datumsfeld wäre für diesen
+  Sonderfall zu viel. Der Zeitraum wird an der Tagesgrenze geteilt wie eine
+  gestempelte Zeit (6.3) und auf **beiden** Tagen auf Überschneidung geprüft.
+  Ein Eintrag, der nicht am angegebenen Tag beginnt, wird abgelehnt.
 
 ### 6.5 Serie (Streak)
 
@@ -376,6 +388,19 @@ diesen Eintrag beantwortet wurde.
   deutlicher Rückfrage) oder nur der `config`-Teil. Vor jedem Import wird die
   Validität geprüft; bei Fehlern wird **nichts** geschrieben und der Fehler im
   Klartext angezeigt (gegen A4).
+- **Geprüft wird inhaltlich, nicht nur auf Typen:** positive Dauer, keine
+  Überschneidungen innerhalb eines Tages, eindeutige Eintrags- und
+  Kategorie-IDs, Eintrag im richtigen Tag und Tag im richtigen Monat,
+  plausible Zahlen (Tageswerte höchstens 24 h, Wochenwerte höchstens 7 Tage)
+  und Obergrenzen für Datenmengen und Textlängen. Eine `schemaVersion` über
+  der eigenen wird abgelehnt.
+- **Unbekannte Felder sind Warnungen, keine Fehler.** Ein künftiges Format darf
+  ein Feld ergänzen, ohne dass eine alte Installation die Sicherung verweigert
+  — aber ein Tippfehler von Hand soll benannt werden. `validateBackup` liefert
+  dafür `warnings` neben `errors`; nur `errors` entscheidet über `ok`.
+- **Ein eingefügtes Teil-JSON wird auf die bestehende Konfiguration gelegt,
+  nicht an ihre Stelle.** Sonst löscht `{"dayTargets": …}` alle eigenen
+  Kategorien. Wer Kategorien ersetzen will, gibt `categories` mit an.
 - Zusätzlich gibt es im Einstellungs-Screen ein Textfeld, in das man das
   Config-JSON direkt einfügen kann — damit ist Martins Wunsch "ich will das in
   einem JSON einstellen können" ohne Dateiverwaltung am Handy erfüllt.
@@ -477,6 +502,15 @@ oder Wochenstand.
    Zeitraum, aktiv/inaktiv, Reihenfolge), Tagessoll je Wochentag,
    Rückfrage-Zeit, harte Obergrenze, Erinnerungs-Zeit, Speicher-Status,
    JSON-Export/-Import, Config-Textfeld, App-Version.
+
+**Bedienbarkeit** gilt für alle Screens: Was anklickbar ist, ist ein echter
+Knopf mit `aria-label` — nicht eine Fläche mit Klick-Handler. Dialoge
+(Rückfrage, Eintrags-Editor, Import-Bestätigung) tragen `role="dialog"` und
+`aria-modal`, bekommen beim Öffnen den Fokus, halten den Tabulator fest und
+geben den Fokus beim Schließen zurück. Escape schließt den Editor, die
+Rückfrage bewusst nicht. Die Navigation setzt `aria-current="page"`, Hinweise
+sind `role="status"`, Fehler `role="alert"`, und der Fokus ist überall
+sichtbar.
 
 ---
 

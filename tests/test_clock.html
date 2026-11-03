@@ -479,6 +479,56 @@ test('checkOnVisible meldet einen Schreibfehler beim hardstop', () => {
   assert(SW.storage.loadRunning() !== null, 'Uhr trotz Fehler verworfen');
 });
 
+suite('clock: Nachtrag über Mitternacht');
+
+test('addManual teilt einen Nachtrag an der Tagesgrenze', () => {
+  // F2: 23:40-00:20 ist ein zusammenhaengender Zeitraum, der auf zwei
+  // Tage faellt.
+  clearSw();
+  const res = SW.clock.addManual('2026-11-03', 'umbau',
+    '2026-11-03T23:40:00+01:00', '2026-11-04T00:20:00+01:00', t('12:00', '2026-11-05'));
+  assertEqual(res.ok, true);
+  assertEqual(eintraege('2026-11-03').length, 1);
+  assertEqual(eintraege('2026-11-04').length, 1);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 20);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-04')[0]), 20);
+  assertEqual(eintraege('2026-11-04')[0].src, 'manual');
+  assertEqual(SW.storage.loadDay('2026-11-04').target, 240);
+});
+
+test('addManual lehnt einen Nachtrag ab, der am falschen Tag beginnt', () => {
+  clearSw();
+  const res = SW.clock.addManual('2026-11-03', 'umbau',
+    '2026-11-05T10:00:00+01:00', '2026-11-05T11:00:00+01:00', t('12:00', '2026-11-05'));
+  assertEqual(res.ok, false);
+  assert(/Tag/.test(res.error), 'Fehlertext: ' + res.error);
+  assertEqual(eintraege('2026-11-05').length, 0);
+});
+
+test('addManual prueft die Ueberschneidung auf beiden Tagen', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-04', 'verein',
+    '2026-11-04T00:10:00+01:00', '2026-11-04T01:00:00+01:00', t('12:00', '2026-11-05'));
+  const res = SW.clock.addManual('2026-11-03', 'umbau',
+    '2026-11-03T23:40:00+01:00', '2026-11-04T00:20:00+01:00', t('12:00', '2026-11-05'));
+  assertEqual(res.ok, false);
+  assert(/Überschneidet sich/.test(res.error), 'Fehlertext: ' + res.error);
+  assertEqual(eintraege('2026-11-03').length, 0);
+});
+
+test('editEntry kann einen Eintrag ueber Mitternacht ziehen', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-03', 'umbau',
+    '2026-11-03T23:00:00+01:00', '2026-11-03T23:30:00+01:00', t('12:00', '2026-11-05'));
+  const id = eintraege('2026-11-03')[0].id;
+  const res = SW.clock.editEntry('2026-11-03', id, { end: '2026-11-04T00:30:00+01:00' }, t('12:00', '2026-11-05'));
+  assertEqual(res.ok, true);
+  assertEqual(eintraege('2026-11-03').length, 1);
+  assertEqual(eintraege('2026-11-04').length, 1);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 60);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-04')[0]), 30);
+});
+
 runAll();
 </script>
 </body>

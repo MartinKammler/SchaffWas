@@ -1,5 +1,56 @@
 # Changelog
 
+## 1.4.0 — 2026-11-03
+
+Der Rest der Befunde aus dem externen technischen Review.
+
+**Daten**
+
+- **Backups werden jetzt inhaltlich geprüft, nicht nur auf Typen.** Abgelehnt
+  werden: Einträge ohne positive Dauer, sich überschneidende Einträge eines
+  Tages, doppelte Eintrags- und Kategorie-IDs, Einträge im falschen
+  Tagesdatensatz, Tage im falschen Monat, unsinnige Zahlen (ein Tagessoll über
+  24 h), sowie Backups aus einer neueren Programmversion. Dazu Obergrenzen für
+  Datenmengen und Textlängen. Alle Fehler kommen auf einmal, mit Pfadangabe im
+  Klartext.
+- **Unbekannte Felder werden benannt, nicht verschluckt.** Ein Tippfehler im
+  JSON-Kasten (`dayTarget` statt `dayTargets`) wird als Hinweis gemeldet, statt
+  wirkungslos zu verpuffen — das Backup wird deswegen aber nicht abgelehnt.
+- **Ein eingefügtes Teil-JSON ersetzt nicht mehr die ganze Konfiguration.**
+  Vorher löschte `{"dayTargets": …}` sämtliche eigenen Kategorien.
+
+**Zeiten**
+
+- **Nachträge und Korrekturen dürfen über Mitternacht reichen.** Im Editor gibt
+  es dafür den Schalter *Ende am Folgetag*; der Zeitraum wird an der
+  Tagesgrenze geteilt wie eine gestempelte Zeit und auf beiden Tagen auf
+  Überschneidung geprüft.
+
+**Bedienung**
+
+- **Tastatur und Screenreader.** Protokollzeilen sind echte Knöpfe statt
+  klickbarer Flächen. Rückfrage, Editor und Import-Bestätigung sind richtige
+  Dialoge: Fokus springt hinein, der Tabulator bleibt drin, beim Schließen
+  kommt der Fokus zurück. Escape schließt den Editor — die Rückfrage bewusst
+  nicht. Die Navigation meldet den aktiven Schirm, Hinweise und Fehler werden
+  angesagt, und der Fokus ist überall sichtbar.
+
+**Offline und Updates**
+
+- **Eine halb geladene App-Shell gilt jetzt als Installationsfehler.** Vorher
+  wurde der neue Service Worker trotzdem aktiv und löschte den letzten
+  vollständigen Cache — die App startete danach offline nicht mehr.
+- **Neue Versionen melden sich.** Statt still im Hintergrund zu warten,
+  erscheint „Neue Version verfügbar" mit einem Knopf. Neu geladen wird erst auf
+  Tipp — nie mitten im Tippen oder bei laufender Uhr.
+
+**Kleinkram**
+
+- `requestPersist` fragt einmal je Sitzung statt bei jedem Aufbau der
+  Einstellungen.
+- Die Monatsansicht liest jeden Tag nur noch einmal.
+- Eine leere CSS-Regel entfernt.
+
 ## 1.3.0 — 2026-11-03
 
 Behebt Befunde aus einem externen technischen Review.

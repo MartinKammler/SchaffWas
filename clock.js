@@ -253,18 +253,39 @@ SW.clock = (function () {
     return liste;
   }
 
+  // Ein Nachtrag darf über Mitternacht reichen (Spec §6.4.3): er wird dann
+  // genauso an der Tagesgrenze geteilt wie eine gestempelte Zeit, und jeder
+  // Teil wird gegen seinen eigenen Tag auf Überschneidung geprüft.
   function addManual(dateStr, catId, startIso, endIso, now) {
     const cfg = S().loadConfig();
     const kandidat = { id: neueId(now || new Date()), cat: catId, start: startIso, end: endIso, src: 'manual' };
+
     if (M().entryMinutes(kandidat) <= 0) {
       return { ok: false, error: 'Das Ende liegt vor dem Start.' };
     }
-    const rec = ladeOderLege(dateStr, cfg);
-    kandidat.id = freieId(rec, kandidat.id);
-    const treffer = M().overlapOf(kandidat, mitLaufender(rec, dateStr, now));
-    if (treffer) return { ok: false, error: ueberschneidungsText(treffer, cfg) };
-    rec.entries.push(kandidat);
-    return S().saveDay(dateStr, rec);
+    if (M().dateKeyOf(startIso) !== dateStr) {
+      return { ok: false, error: 'Der Eintrag beginnt nicht an diesem Tag.' };
+    }
+
+    const teile = M().splitAtMidnight(kandidat);
+    const konflikt = ersteUeberschneidung(teile, cfg, now);
+    if (konflikt) return { ok: false, error: ueberschneidungsText(konflikt, cfg) };
+
+    return bucheTeile(teile, cfg);
+  }
+
+  // Prüft jeden Teil gegen den Tag, auf den er fällt.
+  function ersteUeberschneidung(teile, cfg, now, ohneId) {
+    for (let i = 0; i < teile.length; i++) {
+      const teil = teile[i];
+      const tag = M().dateKeyOf(teil.start);
+      const rec = S().loadDay(tag);
+      const bestand = mitLaufender(rec, tag, now)
+        .filter(e => !ohneId || e.id !== ohneId);
+      const treffer = M().overlapOf(teil, bestand);
+      if (treffer) return treffer;
+    }
+    return null;
   }
 
   function editEntry(dateStr, id, patch, now) {
@@ -276,11 +297,26 @@ SW.clock = (function () {
 
     const neu = Object.assign({}, rec.entries[idx], patch, { src: 'manual' });
     if (M().entryMinutes(neu) <= 0) return { ok: false, error: 'Das Ende liegt vor dem Start.' };
-    const treffer = M().overlapOf(neu, mitLaufender(rec, dateStr, now));
-    if (treffer) return { ok: false, error: ueberschneidungsText(treffer, cfg) };
+    if (M().dateKeyOf(neu.start) !== dateStr) {
+      return { ok: false, error: 'Der Eintrag beginnt nicht an diesem Tag.' };
+    }
 
-    rec.entries[idx] = neu;
-    return S().saveDay(dateStr, rec);
+    const teile = M().splitAtMidnight(neu);
+    const konflikt = ersteUeberschneidung(teile, cfg, now, id);
+    if (konflikt) return { ok: false, error: ueberschneidungsText(konflikt, cfg) };
+
+    // Einfacher Fall: der Eintrag bleibt an seinem Tag.
+    if (teile.length === 1) {
+      rec.entries[idx] = teile[0];
+      return S().saveDay(dateStr, rec);
+    }
+
+    // Reicht die Korrektur über Mitternacht, wird der alte Eintrag entfernt
+    // und durch die Teile ersetzt.
+    rec.entries.splice(idx, 1);
+    const weg = S().saveDay(dateStr, rec);
+    if (!weg.ok) return weg;
+    return bucheTeile(teile, cfg);
   }
 
   function deleteEntry(dateStr, id) {

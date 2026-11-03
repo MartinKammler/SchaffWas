@@ -8,7 +8,7 @@
 <h1>Historie – Unit Tests</h1>
 <div id="output"></div>
 <div id="summary"></div>
-<div id="buehne" style="display:none"></div>
+<div id="buehne" style="position:absolute;left:-9999px;top:0"></div>
 
 <script src="../version.js"></script>
 <script src="../storage.js"></script>
@@ -207,6 +207,15 @@ test('im Monat blaettert der Knopf einen Monat', () => {
   buehne.querySelector('[name=zurueck]').click();
   assert(/2026-10/.test(buehne.querySelector('h2').textContent), 'Kopf: ' + buehne.querySelector('h2').textContent);
   SW.history.setAnsicht('week');
+});
+
+test('monthModel laedt jeden Tag nur einmal', () => {
+  // Vorher wurde jeder Tag zweimal geladen, also der ganze Monatsblob
+  // 2x31-mal geparst.
+  let aufrufe = 0;
+  const zaehlend = function (d) { aufrufe++; return null; };
+  SW.history.monthModel('2026-11', zaehlend, CFG, '2026-11-15');
+  assertEqual(aufrufe, 30);
 });
 
 runAll();

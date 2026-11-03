@@ -175,80 +175,388 @@ SW.storage = (function () {
 
   function isInt(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v; }
   function isStr(v) { return typeof v === 'string'; }
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+
+  /* ── Grenzwerte der Prüfung (Befund S1) ─────────────────────────
+     Alle Grenzen sind bewusst so weit gesetzt, dass kein realistischer
+     Bestand an ihnen scheitert; sie fangen nur Unsinn ab, der aus einer
+     fremden oder von Hand verbogenen Datei kommt. */
+
+  const SCHEMA_VERSION = 1;              // aktuelles Format (Spec §7.1)
+  const MAX_TEXT = 200;                  // Namen, IDs, Farben: länger ist kein Name, sondern eine Nutzlast
+  const MAX_TAG_MINUTEN = 24 * 60;       // ein Tagessoll über 24 h ist unerfüllbar
+  const MAX_WOCHE_MINUTEN = 7 * 24 * 60; // ein Wochenminimum über 7 Tagen ebenso
+  const MAX_KATEGORIEN = 50;             // Martin hat vier; 50 ist weit jenseits des Sinnvollen
+  const MAX_MONATE = 1200;               // 100 Jahre Protokoll
+  const MAX_TAGE_JE_MONAT = 31;          // mehr Tage hat kein Monat
+  const MAX_EINTRAEGE_JE_TAG = 500;      // ein Stempel je drei Minuten, 24 h lang
+  const MAX_EINTRAEGE_GESAMT = 100000;   // Obergrenze für die Prüfung selbst: sie läuft im UI-Thread
+  const MAX_FEHLER = 100;                // mehr liest niemand, und die Liste soll nicht selbst zur Last werden
+  const MAX_WARNUNGEN = 50;
+
+  const BACKUP_FELDER = ['schemaVersion', 'appVersion', 'exportedAt', 'config', 'logs'];
+  const CONFIG_FELDER = ['schemaVersion', 'dayTargets', 'categories', 'reminderMinutes',
+    'askAfterMinutes', 'hardStopMinutes', 'taunts'];
+  const KATEGORIE_FELDER = ['id', 'name', 'color', 'minMinutes', 'minPeriod', 'active'];
+  const TAG_FELDER = ['target', 'mins', 'entries'];
+  const EINTRAG_FELDER = ['id', 'cat', 'start', 'end', 'src'];
+  const SRC_WERTE = ['timer', 'manual', 'autostop', 'trimmed'];
+
+  // Sammelstelle für Fehler und Warnungen. Gezählt wird mit, was über die
+  // Obergrenze hinaus anfällt — unterdrückte Fehler werden genannt, nicht
+  // verschwiegen.
+  function sammler() {
+    const errors = [];
+    const warnings = [];
+    let zuviel = 0;
+    return {
+      fehler: function (t) { if (errors.length < MAX_FEHLER) errors.push(t); else zuviel++; },
+      warnung: function (t) { if (warnings.length < MAX_WARNUNGEN) warnings.push(t); },
+      ergebnis: function () {
+        if (zuviel > 0) errors.push(`Dazu kommen ${zuviel} weitere Fehler, die hier nicht mehr aufgeführt sind.`);
+        return { ok: errors.length === 0, errors: errors, warnings: warnings };
+      }
+    };
+  }
+
+  // Tagesschlüssel eines Zeitpunkts in lokaler Zeit — dieselbe Rechnung wie
+  // SW.model.dateKeyOf.
+  //
+  // Bewusst hier noch einmal und nicht über SW.model: storage.js ist die
+  // Speicherschicht und wird in Tests auch allein geladen (tests/test_storage.html
+  // zieht nur version.js und storage.js). Eine Abfrage auf Vorhandensein von
+  // SW.model hätte zwei Prüfpfade zur Folge — die Validierung würde je nach
+  // Ladereihenfolge anders urteilen, und genau das darf eine Prüfung nicht.
+  // Der Preis sind drei kurze Hilfsfunktionen; die Rechnung ist trivial und
+  // steht in model.js unverändert daneben.
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function tagesschluessel(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  function folgetag(dateStr) {
+    const t = String(dateStr).split('-');
+    // Mittags gerechnet, damit die Sommerzeit-Umstellung nicht in den
+    // Vortag zurückfällt.
+    const d = new Date(Number(t[0]), Number(t[1]) - 1, Number(t[2]) + 1, 12, 0, 0, 0);
+    return tagesschluessel(d);
+  }
+
+  function istMitternacht(d) {
+    return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+  }
+
+  function zeitpunkt(v) {
+    if (!isStr(v)) return null;
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Unbekannte Felder werden nicht abgelehnt, sondern als Warnung gemeldet.
+  // Begründung: ein künftiges Format darf ein Feld ergänzen, ohne dass alte
+  // Installationen das Backup verweigern — eine harte Ablehnung würde die
+  // Sicherung ausgerechnet dann unbrauchbar machen, wenn sie gebraucht wird.
+  // Stillschweigend übergehen wäre aber auch falsch: wer eine Datei von Hand
+  // bearbeitet und sich vertippt ("dayTarget" statt "dayTargets"), soll das
+  // erfahren. Deshalb: ok bleibt true, warnings nennt jedes Feld mit Pfad.
+  function unbekannteFelder(objekt, bekannt, pfad, f) {
+    Object.keys(objekt).forEach(k => {
+      if (bekannt.indexOf(k) === -1) {
+        f.warnung(`${pfad}.${k} ist ein unbekanntes Feld und wird nicht geprüft.`);
+      }
+    });
+  }
+
+  function textPruefen(wert, pfad, f) {
+    if (isStr(wert) && wert.length > MAX_TEXT) {
+      f.fehler(`${pfad} ist mit ${wert.length} Zeichen zu lang — höchstens ${MAX_TEXT} Zeichen sind erlaubt.`);
+      return false;
+    }
+    return true;
+  }
+
+  function obergrenzePruefen(wert, pfad, max, f) {
+    if (isInt(wert) && wert > max) {
+      f.fehler(`${pfad} ist mit ${wert} Minuten unmöglich — höchstens ${max} Minuten sind erlaubt.`);
+      return false;
+    }
+    return true;
+  }
+
+  function configPruefen(cfg, f) {
+    unbekannteFelder(cfg, CONFIG_FELDER, 'config', f);
+
+    if (cfg.schemaVersion !== undefined) {
+      if (!isInt(cfg.schemaVersion) || cfg.schemaVersion < 1) {
+        f.fehler('config.schemaVersion ist keine Versionsnummer.');
+      } else if (cfg.schemaVersion > SCHEMA_VERSION) {
+        f.fehler(`config.schemaVersion ${cfg.schemaVersion} stammt aus einer neueren Version von Schaff was! `
+          + `— diese Version versteht höchstens ${SCHEMA_VERSION} und spielt das Backup nicht ein.`);
+      }
+    }
+
+    if (cfg.dayTargets !== undefined) {
+      if (!isObj(cfg.dayTargets)) {
+        f.fehler('config.dayTargets ist kein Objekt.');
+      } else {
+        Object.keys(cfg.dayTargets).forEach(k => {
+          if (DAYS.indexOf(k) === -1) f.fehler(`config.dayTargets.${k} ist kein Wochentag.`);
+          else if (!isInt(cfg.dayTargets[k]) || cfg.dayTargets[k] < 0) f.fehler(`config.dayTargets.${k} ist keine Minutenzahl.`);
+          else obergrenzePruefen(cfg.dayTargets[k], `config.dayTargets.${k}`, MAX_TAG_MINUTEN, f);
+        });
+      }
+    }
+
+    if (cfg.categories !== undefined) {
+      if (!Array.isArray(cfg.categories)) {
+        f.fehler('config.categories ist keine Liste.');
+      } else if (cfg.categories.length > MAX_KATEGORIEN) {
+        f.fehler(`config.categories enthält ${cfg.categories.length} Kategorien — höchstens ${MAX_KATEGORIEN} sind erlaubt.`);
+      } else {
+        const gesehen = {};
+        cfg.categories.forEach((c, i) => {
+          const pfad = `config.categories[${i}]`;
+          if (!isObj(c)) { f.fehler(`${pfad} ist kein Objekt.`); return; }
+          unbekannteFelder(c, KATEGORIE_FELDER, pfad, f);
+
+          if (!isStr(c.id) || !c.id) {
+            f.fehler(`${pfad}.id fehlt.`);
+          } else if (textPruefen(c.id, `${pfad}.id`, f)) {
+            // Doppelte IDs machen Historie und Minima unauflösbar: die Summen
+            // einer Kategorie würden auf zwei Einträge in der Config zeigen.
+            if (gesehen[c.id]) f.fehler(`${pfad}.id "${c.id}" kommt in config.categories mehrfach vor.`);
+            gesehen[c.id] = true;
+          }
+
+          if (!isStr(c.name)) f.fehler(`${pfad}.name fehlt.`);
+          else textPruefen(c.name, `${pfad}.name`, f);
+          if (c.color !== undefined) {
+            if (!isStr(c.color)) f.fehler(`${pfad}.color ist keine Farbe.`);
+            else textPruefen(c.color, `${pfad}.color`, f);
+          }
+          if (c.active !== undefined && typeof c.active !== 'boolean') {
+            f.fehler(`${pfad}.active ist kein Ja/Nein-Wert.`);
+          }
+
+          const wochenweise = c.minPeriod === 'week';
+          if (c.minPeriod !== 'day' && !wochenweise) f.fehler(`${pfad}.minPeriod muss day oder week sein.`);
+          if (!isInt(c.minMinutes) || c.minMinutes < 0) f.fehler(`${pfad}.minMinutes ist keine Minutenzahl.`);
+          else obergrenzePruefen(c.minMinutes, `${pfad}.minMinutes`,
+            wochenweise ? MAX_WOCHE_MINUTEN : MAX_TAG_MINUTEN, f);
+        });
+      }
+    }
+
+    // Die drei Uhr-Zeiten sind Zeiten innerhalb eines Stempelvorgangs; über
+    // einen Kalendertag hinaus ergibt keine von ihnen noch einen Sinn.
+    ['reminderMinutes', 'askAfterMinutes', 'hardStopMinutes'].forEach(k => {
+      if (cfg[k] === undefined) return;
+      if (!isInt(cfg[k]) || cfg[k] <= 0) f.fehler(`config.${k} ist keine Minutenzahl.`);
+      else obergrenzePruefen(cfg[k], `config.${k}`, MAX_TAG_MINUTEN, f);
+    });
+
+    if (cfg.taunts !== undefined && cfg.taunts !== null && !isObj(cfg.taunts)) {
+      f.fehler('config.taunts ist weder null noch ein Objekt.');
+    }
+  }
+
+  // Prüft die Einträge eines Tages: Dauer, Zugehörigkeit zum Tag, eindeutige
+  // IDs und Überschneidungen.
+  function eintraegePruefen(entries, ym, d, tagBekannt, f) {
+    const pfadTag = `logs.${ym}.${d}`;
+    const gesehen = {};
+    const spanne = [];   // nur die Einträge, deren Zeiten brauchbar sind
+
+    entries.forEach((e, i) => {
+      const pfad = `${pfadTag}.entries[${i}]`;
+      if (!isObj(e)) { f.fehler(`${pfad} ist kein Objekt.`); return; }
+      unbekannteFelder(e, EINTRAG_FELDER, pfad, f);
+
+      if (!isStr(e.id) || !e.id) {
+        f.fehler(`${pfad}.id fehlt.`);
+      } else if (textPruefen(e.id, `${pfad}.id`, f)) {
+        // Zwei Einträge mit derselben id an einem Tag: Bearbeiten und Löschen
+        // greifen über die id zu und würden den falschen treffen.
+        if (gesehen[e.id]) f.fehler(`${pfad}.id "${e.id}" kommt an diesem Tag mehrfach vor.`);
+        gesehen[e.id] = true;
+      }
+
+      if (!isStr(e.cat) || !e.cat) f.fehler(`${pfad}.cat fehlt.`);
+      else textPruefen(e.cat, `${pfad}.cat`, f);
+
+      if (e.src !== undefined) {
+        if (!isStr(e.src)) f.fehler(`${pfad}.src ist keine Herkunft.`);
+        else if (SRC_WERTE.indexOf(e.src) === -1) {
+          f.warnung(`${pfad}.src "${e.src}" ist keine bekannte Herkunft (${SRC_WERTE.join(', ')}).`);
+        }
+      }
+
+      const start = zeitpunkt(e.start);
+      const ende = zeitpunkt(e.end);
+      if (!start) f.fehler(`${pfad}.start ist kein Zeitstempel.`);
+      if (!ende) f.fehler(`${pfad}.end ist kein Zeitstempel.`);
+      if (!start || !ende) return;
+
+      if (ende.getTime() <= start.getTime()) {
+        f.fehler(`${pfad}.end liegt nicht nach .start — die Dauer wäre null oder negativ.`);
+        return;
+      }
+
+      if (tagBekannt) {
+        // Der Eintrag muss in dem Tag stehen, zu dem er gehört: sonst zählt er
+        // in Tagessumme, Serie und Historie am falschen Tag mit.
+        const startTag = tagesschluessel(start);
+        if (startTag !== d) {
+          f.fehler(`${pfad}.start gehört zum ${startTag}, steht aber im Tagesdatensatz ${d}.`);
+          return;
+        }
+        // Das Ende darf höchstens auf der Mitternacht des Folgetages liegen —
+        // genau so legt clock.js den ersten Teil eines zerlegten Eintrags ab.
+        const endeTag = tagesschluessel(ende);
+        if (endeTag !== d && !(endeTag === folgetag(d) && istMitternacht(ende))) {
+          f.fehler(`${pfad}.end liegt mit ${endeTag} außerhalb des Tages ${d} `
+            + '— ein Eintrag endet spätestens an der folgenden Mitternacht.');
+          return;
+        }
+      }
+
+      spanne.push({ i: i, von: start.getTime(), bis: ende.getTime() });
+    });
+
+    // Überschneidungen: nach Beginn sortiert genügt der Vergleich mit dem
+    // bisher weitesten Ende — das findet jede Überschneidung und bleibt auch
+    // bei vielen Einträgen bezahlbar. Berührung an den Rändern ist erlaubt,
+    // genau wie in SW.model.overlapOf.
+    spanne.sort((a, b) => a.von - b.von);
+    let weitestes = null;
+    spanne.forEach(cur => {
+      if (weitestes && cur.von < weitestes.bis) {
+        f.fehler(`${pfadTag}.entries[${cur.i}] überschneidet sich zeitlich mit ${pfadTag}.entries[${weitestes.i}].`);
+      }
+      if (!weitestes || cur.bis > weitestes.bis) weitestes = cur;
+    });
+  }
+
+  function logsPruefen(logs, f) {
+    const monate = Object.keys(logs);
+    if (monate.length > MAX_MONATE) {
+      f.fehler(`logs enthält ${monate.length} Monate — höchstens ${MAX_MONATE} sind erlaubt.`);
+      return;
+    }
+
+    let eintraegeGesamt = 0;
+    let budgetGemeldet = false;
+
+    monate.forEach(ym => {
+      if (budgetGemeldet) return;
+      if (!/^\d{4}-\d{2}$/.test(ym)) f.fehler(`logs.${ym} ist kein Monat im Format YYYY-MM.`);
+      const month = logs[ym];
+      if (!isObj(month)) { f.fehler(`logs.${ym} ist kein Objekt.`); return; }
+
+      const tage = Object.keys(month);
+      if (tage.length > MAX_TAGE_JE_MONAT) {
+        f.fehler(`logs.${ym} enthält ${tage.length} Tage — ein Monat hat höchstens ${MAX_TAGE_JE_MONAT}.`);
+        return;
+      }
+
+      tage.forEach(d => {
+        if (budgetGemeldet) return;
+        let tagBekannt = true;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          f.fehler(`logs.${ym}.${d} ist kein Datum im Format YYYY-MM-DD.`);
+          tagBekannt = false;
+        } else if (monthOf(d) !== ym) {
+          f.fehler(`logs.${ym}.${d} gehört nicht zum Monat ${ym}.`);
+          tagBekannt = false;
+        }
+
+        const rec = month[d];
+        if (!isObj(rec)) { f.fehler(`logs.${ym}.${d} ist kein Objekt.`); return; }
+        unbekannteFelder(rec, TAG_FELDER, `logs.${ym}.${d}`, f);
+
+        if (rec.target !== undefined) {
+          if (!isInt(rec.target) || rec.target < 0) f.fehler(`logs.${ym}.${d}.target ist keine Minutenzahl.`);
+          else obergrenzePruefen(rec.target, `logs.${ym}.${d}.target`, MAX_TAG_MINUTEN, f);
+        }
+
+        if (rec.mins !== undefined) {
+          if (!isObj(rec.mins)) {
+            f.fehler(`logs.${ym}.${d}.mins ist kein Objekt.`);
+          } else {
+            Object.keys(rec.mins).forEach(cat => {
+              const pfad = `logs.${ym}.${d}.mins.${cat}`;
+              const regel = rec.mins[cat];
+              if (!Array.isArray(regel) || regel.length !== 2) {
+                f.fehler(`${pfad} ist keine Regel aus Minutenzahl und Zeitraum.`);
+                return;
+              }
+              const wochenweise = regel[1] === 'week';
+              if (regel[1] !== 'day' && !wochenweise) f.fehler(`${pfad}[1] muss day oder week sein.`);
+              if (!isInt(regel[0]) || regel[0] < 0) f.fehler(`${pfad}[0] ist keine Minutenzahl.`);
+              else obergrenzePruefen(regel[0], `${pfad}[0]`, wochenweise ? MAX_WOCHE_MINUTEN : MAX_TAG_MINUTEN, f);
+            });
+          }
+        }
+
+        if (!Array.isArray(rec.entries)) { f.fehler(`logs.${ym}.${d}.entries ist keine Liste.`); return; }
+        if (rec.entries.length > MAX_EINTRAEGE_JE_TAG) {
+          f.fehler(`logs.${ym}.${d}.entries enthält ${rec.entries.length} Einträge — höchstens ${MAX_EINTRAEGE_JE_TAG} sind erlaubt.`);
+          return;
+        }
+
+        eintraegeGesamt += rec.entries.length;
+        if (eintraegeGesamt > MAX_EINTRAEGE_GESAMT) {
+          f.fehler(`Das Backup enthält mehr als ${MAX_EINTRAEGE_GESAMT} Einträge — es wird nicht weiter geprüft und nicht eingespielt.`);
+          budgetGemeldet = true;
+          return;
+        }
+
+        eintraegePruefen(rec.entries, ym, d, tagBekannt, f);
+      });
+    });
+  }
 
   // Prüft ein Backup vollständig durch und sammelt alle Fehler. Ein halb
   // importierter Zustand wäre schlimmer als gar keiner (Spec A4), deshalb
   // entscheidet erst das Gesamtergebnis über das Schreiben.
+  //
+  // Neben den Grundtypen werden die inhaltlichen Invarianten geprüft (Befund
+  // S1): positive Dauer, keine Überschneidungen, eindeutige IDs, Eintrag im
+  // passenden Tag, Zahlen in einer Größe, die es wirklich geben kann, und
+  // Datenmengen in einer Größe, die diese Prüfung auch überlebt.
+  //
+  // warnings sind Hinweise, die ein Backup nicht ablehnen: ok hängt
+  // ausschließlich an errors.
   function validateBackup(obj) {
-    const errors = [];
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-      return { ok: false, errors: ['Backup ist kein Objekt.'] };
+    const f = sammler();
+    if (!isObj(obj)) {
+      return { ok: false, errors: ['Backup ist kein Objekt.'], warnings: [] };
     }
-    const cfg = obj.config;
-    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
-      errors.push('config fehlt oder ist kein Objekt.');
-    } else {
-      if (cfg.dayTargets !== undefined) {
-        if (!cfg.dayTargets || typeof cfg.dayTargets !== 'object' || Array.isArray(cfg.dayTargets)) {
-          errors.push('config.dayTargets ist kein Objekt.');
-        } else {
-          Object.keys(cfg.dayTargets).forEach(k => {
-            if (DAYS.indexOf(k) === -1) errors.push(`config.dayTargets.${k} ist kein Wochentag.`);
-            else if (!isInt(cfg.dayTargets[k]) || cfg.dayTargets[k] < 0) errors.push(`config.dayTargets.${k} ist keine Minutenzahl.`);
-          });
-        }
+    unbekannteFelder(obj, BACKUP_FELDER, 'Backup', f);
+
+    if (obj.schemaVersion !== undefined) {
+      if (!isInt(obj.schemaVersion) || obj.schemaVersion < 1) {
+        f.fehler('schemaVersion ist keine Versionsnummer.');
+      } else if (obj.schemaVersion > SCHEMA_VERSION) {
+        f.fehler(`schemaVersion ${obj.schemaVersion} stammt aus einer neueren Version von Schaff was! `
+          + `— diese Version versteht höchstens ${SCHEMA_VERSION} und spielt das Backup nicht ein.`);
       }
-      if (cfg.categories !== undefined) {
-        if (!Array.isArray(cfg.categories)) {
-          errors.push('config.categories ist keine Liste.');
-        } else {
-          cfg.categories.forEach((c, i) => {
-            if (!c || typeof c !== 'object') { errors.push(`config.categories[${i}] ist kein Objekt.`); return; }
-            if (!isStr(c.id) || !c.id) errors.push(`config.categories[${i}].id fehlt.`);
-            if (!isStr(c.name)) errors.push(`config.categories[${i}].name fehlt.`);
-            if (!isInt(c.minMinutes) || c.minMinutes < 0) errors.push(`config.categories[${i}].minMinutes ist keine Minutenzahl.`);
-            if (c.minPeriod !== 'day' && c.minPeriod !== 'week') errors.push(`config.categories[${i}].minPeriod muss day oder week sein.`);
-          });
-        }
-      }
-      ['reminderMinutes', 'askAfterMinutes', 'hardStopMinutes'].forEach(k => {
-        if (cfg[k] !== undefined && (!isInt(cfg[k]) || cfg[k] <= 0)) errors.push(`config.${k} ist keine Minutenzahl.`);
-      });
     }
+    if (obj.appVersion !== undefined) textPruefen(obj.appVersion, 'appVersion', f);
+    if (obj.exportedAt !== undefined && !zeitpunkt(obj.exportedAt)) {
+      f.warnung('exportedAt ist kein Zeitstempel — der Zeitpunkt der Sicherung bleibt unbekannt.');
+    }
+
+    if (!isObj(obj.config)) f.fehler('config fehlt oder ist kein Objekt.');
+    else configPruefen(obj.config, f);
+
     if (obj.logs !== undefined) {
-      if (!obj.logs || typeof obj.logs !== 'object' || Array.isArray(obj.logs)) {
-        errors.push('logs ist kein Objekt.');
-      } else {
-        Object.keys(obj.logs).forEach(ym => {
-          if (!/^\d{4}-\d{2}$/.test(ym)) errors.push(`logs.${ym} ist kein Monat im Format YYYY-MM.`);
-          const month = obj.logs[ym];
-          if (!month || typeof month !== 'object' || Array.isArray(month)) { errors.push(`logs.${ym} ist kein Objekt.`); return; }
-          Object.keys(month).forEach(d => {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) errors.push(`logs.${ym}.${d} ist kein Datum im Format YYYY-MM-DD.`);
-            const rec = month[d];
-            if (!rec || typeof rec !== 'object') { errors.push(`logs.${ym}.${d} ist kein Objekt.`); return; }
-            if (rec.target !== undefined && (!isInt(rec.target) || rec.target < 0)) {
-              errors.push(`logs.${ym}.${d}.target ist keine Minutenzahl.`);
-            }
-            if (rec.mins !== undefined && (!rec.mins || typeof rec.mins !== 'object' || Array.isArray(rec.mins))) {
-              errors.push(`logs.${ym}.${d}.mins ist kein Objekt.`);
-            }
-            if (!Array.isArray(rec.entries)) { errors.push(`logs.${ym}.${d}.entries ist keine Liste.`); return; }
-            rec.entries.forEach((e, i) => {
-              if (!e || typeof e !== 'object') { errors.push(`logs.${ym}.${d}.entries[${i}] ist kein Objekt.`); return; }
-              if (!isStr(e.cat) || !e.cat) errors.push(`logs.${ym}.${d}.entries[${i}].cat fehlt.`);
-              if (!isStr(e.start) || isNaN(new Date(e.start).getTime())) {
-                errors.push(`logs.${ym}.${d}.entries[${i}].start ist kein Zeitstempel.`);
-              }
-              if (!isStr(e.end) || isNaN(new Date(e.end).getTime())) {
-                errors.push(`logs.${ym}.${d}.entries[${i}].end ist kein Zeitstempel.`);
-              }
-            });
-          });
-        });
-      }
+      if (!isObj(obj.logs)) f.fehler('logs ist kein Objekt.');
+      else logsPruefen(obj.logs, f);
     }
-    return { ok: errors.length === 0, errors: errors };
+
+    return f.ergebnis();
   }
 
   // Ein Backup einspielen heisst ersetzen, nicht mischen: Monate, die das

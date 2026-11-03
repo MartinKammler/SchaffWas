@@ -1,0 +1,26 @@
+{
+  "name": "Schaff was!",
+  "short_name": "Schaff was!",
+  "description": "Stempeluhr gegen den inneren Schweinehund: Tagessoll, Kategorien, Mindestzeiten.",
+  "lang": "de",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#15181d",
+  "theme_color": "#15181d",
+  "start_url": "./index.html",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "./Logo-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./Logo-icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Service Worker – Unit Tests</title>
+</head>
+<body>
+<h1>Service Worker – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<!-- sw-shell.js ist die echte Quelle, die auch sw.js per importScripts lädt.
+     Keine Kopie der Logik im Test. -->
+<script src="../version.js"></script>
+<script src="../sw-shell.js"></script>
+<script src="_runner.js"></script>
+<script>
+suite('Service Worker: Cache');
+
+test('CACHE_NAME leitet sich aus APP_VERSION ab', () => {
+  assertEqual(SW_CACHE_NAME, 'sw-shell-v' + APP_VERSION);
+});
+
+test('Aufräumen löscht nur eigene Caches', () => {
+  assertEqual(swShouldDeleteCache('lgc-shell-v1.5.3'), false);
+  assertEqual(swShouldDeleteCache('lgc-shell-v' + APP_VERSION), false);
+  assertEqual(swShouldDeleteCache('sw-shell-v0.0.9'), true);
+  assertEqual(swShouldDeleteCache(SW_CACHE_NAME), false);
+  assertEqual(swShouldDeleteCache('irgendwas'), false);
+});
+
+suite('Service Worker: App-Shell');
+
+test('APP_SHELL enthält alle App-Dateien', () => {
+  const muss = [
+    './', './index.html', './app.css', './manifest.json',
+    './version.js', './storage.js', './model.js', './clock.js', './taunts.js',
+    './ui.js', './ui-main.js', './ui-log.js', './ui-history.js', './ui-settings.js', './app.js',
+    './Logo.png', './Logo-Sau.png', './Logo-Schriftzug.png', './Logo-icon.png', './Logo-icon-maskable.png'
+  ];
+  muss.forEach(p => assert(SW_APP_SHELL.indexOf(p) !== -1, 'fehlt in APP_SHELL: ' + p));
+});
+
+test('APP_SHELL nutzt ausschließlich relative Pfade', () => {
+  SW_APP_SHELL.forEach(p => assert(p.indexOf('./') === 0, 'nicht relativ: ' + p));
+});
+
+test('APP_SHELL enthält keine Doppelten', () => {
+  assertEqual(new Set(SW_APP_SHELL).size, SW_APP_SHELL.length);
+});
+
+test('jede Datei aus APP_SHELL ist auch wirklich da', async () => {
+  for (const p of SW_APP_SHELL) {
+    if (p === './') continue;
+    const res = await fetch('../' + p.slice(2));
+    assert(res.ok || res.status === 0, 'nicht ladbar: ' + p + ' (' + res.status + ')');
+  }
+});
+
+suite('Manifest');
+
+test('manifest.json ist gültiges JSON mit relativen Pfaden', async () => {
+  const m = await (await fetch('../manifest.json')).json();
+  assertEqual(m.name, 'Schaff was!');
+  assertEqual(m.start_url.indexOf('./'), 0);
+  assertEqual(m.scope.indexOf('./'), 0);
+  assertEqual(m.display, 'standalone');
+  assertEqual(m.orientation, 'portrait');
+  assertEqual(m.theme_color, '#15181d');
+  m.icons.forEach(i => assert(i.src.indexOf('./') === 0, 'Icon nicht relativ: ' + i.src));
+});
+
+test('Manifest führt ein normales und ein maskierbares Icon', async () => {
+  const m = await (await fetch('../manifest.json')).json();
+  const zwecke = m.icons.map(i => i.purpose);
+  assert(zwecke.indexOf('any') !== -1, 'purpose any fehlt');
+  assert(zwecke.indexOf('maskable') !== -1, 'purpose maskable fehlt');
+  m.icons.forEach(i => assertEqual(i.sizes, '512x512'));
+});
+
+test('index.html lädt alle Skripte, die APP_SHELL nennt', async () => {
+  const html = await (await fetch('../index.html')).text();
+  ['storage.js', 'model.js', 'clock.js', 'taunts.js', 'ui.js', 'ui-main.js',
+   'ui-log.js', 'ui-history.js', 'ui-settings.js', 'app.js', 'version.js'].forEach(f => {
+    assert(html.indexOf('./' + f) !== -1, 'index.html lädt nicht: ' + f);
+  });
+});
+
+runAll();
+</script>
+</body>
+</html>

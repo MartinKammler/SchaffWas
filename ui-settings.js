@@ -195,10 +195,18 @@ SW.settings = (function () {
       if (!datei) return;
       const leser = new FileReader();
       leser.onload = function () {
-        const res = applyBackupText(String(leser.result));
-        render(root, SW.storage.loadConfig(), res.ok ? 'Backup eingespielt.' : ('Import abgelehnt: ' + res.errors.join(' ')));
+        // Ein Backup ersetzt den gesamten Bestand. Vorher wird gefragt, und
+        // zwar mit den Zahlen, an denen man die falsche Datei erkennt
+        // (Spec §7.4, A4).
+        bestaetigeImport(String(leser.result), function (res) {
+          render(root, SW.storage.loadConfig(),
+            res === null ? 'Import abgebrochen.'
+              : res.ok ? 'Backup eingespielt.'
+                : ('Import abgelehnt: ' + res.errors.join(' ')));
+        });
       };
       leser.readAsText(datei);
+      importFeld.value = '';
     });
     root.appendChild(importFeld);
 
@@ -277,6 +285,46 @@ SW.settings = (function () {
     return SW.storage.importAll(obj);
   }
 
+  // Zeigt, was das Backup enthält und was es ersetzt, und führt den Import
+  // erst nach einer ausdrücklichen Bestätigung aus.
+  function bestaetigeImport(text, fertig) {
+    let obj = null;
+    try { obj = JSON.parse(text); } catch (e) { obj = null; }
+    if (!obj) { fertig({ ok: false, errors: ['Kein gültiges JSON.'] }); return; }
+
+    const monate = obj.logs ? Object.keys(obj.logs).length : 0;
+    const tage = obj.logs
+      ? Object.keys(obj.logs).reduce((a, ym) => a + Object.keys(obj.logs[ym] || {}).length, 0)
+      : 0;
+    const eigeneMonate = SW.storage.listMonths().length;
+
+    const backdrop = el('div', 'ask-backdrop');
+    const box = el('div', 'ask');
+    box.appendChild(el('p', 'ask-frage', 'Backup einspielen?'));
+    box.appendChild(el('p', 'ask-text',
+      `Die Datei bringt ${tage} Tage aus ${monate} Monaten` +
+      (obj.exportedAt ? `, gesichert am ${SW.model.dateKeyOf(obj.exportedAt)}` : '') + '. ' +
+      `Deine jetzigen Daten aus ${eigeneMonate} Monaten werden dabei vollständig ersetzt. ` +
+      'Das lässt sich nicht rückgängig machen.'));
+
+    const ja = el('button', null, 'Ja, alles ersetzen');
+    ja.name = 'import-bestaetigen';
+    ja.addEventListener('click', function () {
+      backdrop.remove();
+      fertig(applyBackupText(text));
+    });
+    box.appendChild(ja);
+
+    const nein = el('button', null, 'Abbrechen');
+    nein.name = 'import-abbrechen';
+    nein.addEventListener('click', function () { backdrop.remove(); fertig(null); });
+    box.appendChild(nein);
+
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
+    return box;
+  }
+
   function backupFile(now) {
     const d = SW.model.dateKeyOf(now);
     return { name: 'schaffwas-backup-' + d + '.json', json: JSON.stringify(SW.storage.exportAll(), null, 2) };
@@ -289,11 +337,20 @@ SW.settings = (function () {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = datei.name;
+      // Manche Browser ignorieren einen Klick auf ein Element, das nicht im
+      // Dokument hängt, und brechen den Download ab, wenn die Blob-URL zu
+      // früh freigegeben wird.
+      a.style.display = 'none';
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
-    } catch (e) { /* Download nicht möglich — der Zeitpunkt wird trotzdem gemerkt */ }
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    } catch (e) {
+      // Kein Download zustande gekommen: dann wird auch nicht behauptet, es
+      // gäbe eine Sicherung.
+      return Object.assign({}, datei, { ok: false });
+    }
     SW.storage.markExported(SW.model.toLocalIso(now));
-    return datei;
+    return Object.assign({}, datei, { ok: true });
   }
 
   function exportStand(now) {
@@ -325,6 +382,7 @@ SW.settings = (function () {
     applyJsonText: applyJsonText,
     applyBackupText: applyBackupText,
     backupFile: backupFile,
+    bestaetigeImport: bestaetigeImport,
     downloadBackup: downloadBackup,
     exportStand: exportStand,
     requestPersist: requestPersist,

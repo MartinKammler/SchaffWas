@@ -196,6 +196,63 @@ test('render zeigt die App-Version', () => {
   assert(buehne.textContent.indexOf(APP_VERSION) !== -1, 'Version fehlt');
 });
 
+suite('Einstellungen: Befunde aus dem Review');
+
+test('das Formular lehnt eine Null bei der harten Obergrenze ab', () => {
+  // I9: 0 wuerde jede laufende Uhr sofort abwuergen.
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="hardStopMinutes"]').value = '0';
+  buehne.querySelector('[name="speichern"]').click();
+  assertEqual(SW.storage.loadConfig().hardStopMinutes, 600);
+  assert(/hardStopMinutes/.test(buehne.textContent), 'Fehler nicht angezeigt');
+});
+
+test('ein Backup wird erst nach ausdruecklicher Bestaetigung eingespielt', () => {
+  // I4: Die falsche Datei im Dateidialog darf nicht alles vernichten.
+  clearSw();
+  SW.storage.saveDay('2026-11-03', { target: 240, mins: {}, entries: [
+    { id: 'e1', cat: 'haushalt', start: '2026-11-03T09:00:00+01:00', end: '2026-11-03T10:00:00+01:00', src: 'timer' }
+  ] });
+  const fremd = JSON.stringify({ appVersion: '1.0.0', exportedAt: '2026-10-01T10:00:00+02:00', config: cfg(), logs: {} });
+
+  let ergebnis = 'nicht gerufen';
+  SW.settings.bestaetigeImport(fremd, r => { ergebnis = r; });
+  const box = document.querySelector('.ask');
+  assert(box, 'keine Rueckfrage');
+  assert(/ersetzt/.test(box.textContent), 'Folgen nicht benannt: ' + box.textContent);
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 1);
+
+  document.querySelector('[name="import-abbrechen"]').click();
+  assertEqual(ergebnis, null);
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 1);
+
+  SW.settings.bestaetigeImport(fremd, r => { ergebnis = r; });
+  document.querySelector('[name="import-bestaetigen"]').click();
+  assertEqual(ergebnis.ok, true);
+  assertEqual(SW.storage.loadDay('2026-11-03'), null);
+});
+
+test('die Rueckfrage nennt Umfang und Datum des Backups', () => {
+  clearSw();
+  const fremd = JSON.stringify({
+    appVersion: '1.0.0', exportedAt: '2026-10-01T10:00:00+02:00', config: cfg(),
+    logs: { '2026-09': { '2026-09-01': { target: 240, mins: {}, entries: [] }, '2026-09-02': { target: 240, mins: {}, entries: [] } } }
+  });
+  SW.settings.bestaetigeImport(fremd, () => {});
+  const text = document.querySelector('.ask').textContent;
+  assert(/2 Tage/.test(text), 'Tage fehlen: ' + text);
+  assert(/2026-10-01/.test(text), 'Datum fehlt: ' + text);
+  document.querySelector('[name="import-abbrechen"]').click();
+});
+
+test('downloadBackup meldet, ob die Sicherung zustande kam', () => {
+  clearSw();
+  const res = SW.settings.downloadBackup(new Date('2026-11-03T13:00:00'));
+  assertEqual(res.ok, true);
+  assertEqual(res.name, 'schaffwas-backup-2026-11-03.json');
+});
+
 runAll();
 </script>
 </body>

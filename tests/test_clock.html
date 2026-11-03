@@ -317,6 +317,123 @@ test('deleteEntry meldet einen unbekannten Eintrag', () => {
   assertEqual(SW.clock.deleteEntry('2026-11-03', 'gibtsnicht').ok, false);
 });
 
+suite('clock: Befunde aus dem Review');
+
+test("resolveAsk('trim') nimmt den mitgegebenen Zeitpunkt, nicht den aktuellen lastSeen", () => {
+  // C1: Auf dem Handy feuert touchstart vor dem click des Knopfes und setzt
+  // lastSeen auf jetzt. Der Trimm-Zeitpunkt muss aus der Rückfrage stammen.
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('09:32'));
+  const frage = SW.clock.checkOnVisible(t('14:00'));
+  assertEqual(frage.action, 'ask');
+  SW.clock.touch(t('14:00'));                       // der Tipp auf den Knopf
+  SW.clock.resolveAsk('trim', t('14:00'), frage.lastSeen);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 32);
+});
+
+test('hardstop greift nicht, wenn die App die ganze Zeit berührt wurde', () => {
+  // I5: 10 h echte Arbeit mit regelmäßigem Blick aufs Handy ist kein
+  // Fall für die harte Obergrenze.
+  clearSw();
+  SW.clock.start('umbau', t('09:00'));
+  for (let h = 10; h <= 19; h++) SW.clock.touch(t((h < 10 ? '0' : '') + h + ':00'));
+  const r = SW.clock.checkOnVisible(t('19:05'));
+  assert(r.action !== 'hardstop', 'hardstop trotz Berührungen: ' + r.action);
+  assert(SW.storage.loadRunning() !== null, 'Uhr wurde beendet');
+});
+
+test('hardstop greift weiter bei unbeachteter Dauerläufer-Uhr', () => {
+  clearSw();
+  SW.clock.start('umbau', t('09:00'));
+  SW.clock.touch(t('12:00'));
+  assertEqual(SW.clock.checkOnVisible(t('23:30')).action, 'hardstop');
+});
+
+test('stop meldet einen Fehler im Tageswechsel und behält die laufende Uhr', () => {
+  // I2: Scheitert die zweite Schreibung, bleibt die Uhr stehen, damit nichts
+  // verloren geht. Der zweite Versuch darf dann nicht doppelt buchen.
+  clearSw();
+  SW.clock.start('umbau', t('23:40'));
+  const echt = Storage.prototype.setItem;
+  let aufrufe = 0;
+  Storage.prototype.setItem = function (k, v) {
+    aufrufe++;
+    if (aufrufe > 2) { const e = new Error('voll'); e.name = 'QuotaExceededError'; throw e; }
+    return echt.call(this, k, v);
+  };
+  let res;
+  try { res = SW.clock.stop(t('00:20', '2026-11-04')); }
+  finally { Storage.prototype.setItem = echt; }
+  assertEqual(res.ok, false);
+  assert(SW.storage.loadRunning() !== null, 'laufender Eintrag wurde verworfen');
+  const ids = eintraege('2026-11-03').concat(eintraege('2026-11-04')).map(e => e.id);
+  assertEqual(new Set(ids).size, ids.length, 'doppelte Ids nach dem Fehlschlag');
+});
+
+test('ein zweiter Stopp nach einem Fehlschlag bucht nicht doppelt', () => {
+  clearSw();
+  SW.clock.start('umbau', t('23:40'));
+  const echt = Storage.prototype.setItem;
+  let aufrufe = 0;
+  Storage.prototype.setItem = function (k, v) {
+    aufrufe++;
+    if (aufrufe > 2) { const e = new Error('voll'); e.name = 'QuotaExceededError'; throw e; }
+    return echt.call(this, k, v);
+  };
+  try { SW.clock.stop(t('00:20', '2026-11-04')); }
+  finally { Storage.prototype.setItem = echt; }
+  SW.clock.stop(t('00:30', '2026-11-04'));
+  assertEqual(eintraege('2026-11-03').length, 1);
+  assertEqual(eintraege('2026-11-04').length, 1);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 20);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-04')[0]), 30);
+});
+
+test('addManual erkennt die Überschneidung mit der laufenden Uhr', () => {
+  // I8: sonst zählt dieselbe Wanduhrzeit doppelt.
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const res = SW.clock.addManual('2026-11-03', 'bewerbung',
+    '2026-11-03T09:30:00+01:00', '2026-11-03T10:30:00+01:00', t('11:00'));
+  assertEqual(res.ok, false);
+  assert(/Überschneidet sich/.test(res.error), 'Fehlertext: ' + res.error);
+  assertEqual(eintraege('2026-11-03').length, 0);
+});
+
+test('addManual lässt einen Nachtrag vor der laufenden Uhr zu', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const res = SW.clock.addManual('2026-11-03', 'bewerbung',
+    '2026-11-03T07:00:00+01:00', '2026-11-03T08:00:00+01:00', t('11:00'));
+  assertEqual(res.ok, true);
+});
+
+test('touch meldet einen Schreibfehler zurück', () => {
+  // I6: stumme Fehlschläge lassen die Erinnerung bei jedem Öffnen neu feuern.
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { throw new Error('voll'); };
+  let res;
+  try { res = SW.clock.touch(t('09:10')); }
+  finally { Storage.prototype.setItem = echt; }
+  assertEqual(res.ok, false);
+});
+
+test('checkOnVisible meldet einen Schreibfehler beim hardstop', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('12:00'));
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { throw new Error('voll'); };
+  let res;
+  try { res = SW.clock.checkOnVisible(t('23:30')); }
+  finally { Storage.prototype.setItem = echt; }
+  assert(res.error, 'kein Fehler gemeldet');
+  assert(SW.storage.loadRunning() !== null, 'Uhr trotz Fehler verworfen');
+});
+
 runAll();
 </script>
 </body>

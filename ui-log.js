@@ -159,15 +159,16 @@ SW.log = (function () {
         fehler.style.display = '';
         return;
       }
+      const jetzt = new Date();
       const res = entry
         ? SW.clock.editEntry(dateKey, entry.id, {
             cat: cat.value,
             start: SW.model.toLocalIso(new Date(startIso)),
             end: SW.model.toLocalIso(new Date(endIso))
-          })
+          }, jetzt)
         : SW.clock.addManual(dateKey, cat.value,
             SW.model.toLocalIso(new Date(startIso)),
-            SW.model.toLocalIso(new Date(endIso)));
+            SW.model.toLocalIso(new Date(endIso)), jetzt);
       if (!res.ok) {
         fehler.textContent = res.error;
         fehler.style.display = '';

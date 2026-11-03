@@ -199,6 +199,83 @@ test('markExported und lastExportAt merken den letzten Export', () => {
   assertEqual(SW.storage.lastExportAt(), '2026-11-03T13:00:00+01:00');
 });
 
+suite('storage: Befunde aus dem Review');
+
+test('importAll ersetzt den Bestand und lässt keine fremden Monate stehen', () => {
+  // I3: Ein Backup einspielen heisst ersetzen, nicht mischen.
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tagRec());
+  const backup = SW.storage.exportAll();
+  SW.storage.saveDay('2026-12-01', tagRec());
+  assertEqual(SW.storage.listMonths().length, 2);
+  assertEqual(SW.storage.importAll(backup).ok, true);
+  assertDeepEqual(SW.storage.listMonths(), ['2026-11']);
+  assertEqual(SW.storage.loadDay('2026-12-01'), null);
+});
+
+test('importAll stellt den alten Zustand wieder her, wenn das Schreiben scheitert', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tagRec());
+  const cfg = SW.storage.loadConfig();
+  cfg.dayTargets.sat = 55;
+  SW.storage.saveConfig(cfg);
+
+  const fremd = SW.storage.exportAll();
+  fremd.config.dayTargets.sat = 199;
+  fremd.logs['2026-12'] = { '2026-12-01': tagRec() };
+
+  // Die Quota schlägt an dem Schlüssel zu, der neu dazukommt. Das Zurück-
+  // schreiben der alten, kleineren Werte muss danach gelingen — sonst wäre
+  // der Rollback selbst wertlos.
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) {
+    if (k === 'sw_log_2026-12') { const e = new Error('voll'); e.name = 'QuotaExceededError'; throw e; }
+    return echt.call(this, k, v);
+  };
+  let res;
+  try { res = SW.storage.importAll(fremd); }
+  finally { Storage.prototype.setItem = echt; }
+
+  assertEqual(res.ok, false);
+  assertEqual(SW.storage.loadConfig().dayTargets.sat, 55);
+  assertDeepEqual(SW.storage.listMonths(), ['2026-11']);
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 1);
+});
+
+test('importAll beendet einen laufenden Eintrag aus der Zeit davor', () => {
+  clearSw();
+  SW.storage.saveRunning({ cat: 'haushalt', start: '2026-11-03T09:00:00+01:00', lastSeen: '2026-11-03T09:00:00+01:00', reminded: false, asked: false });
+  SW.storage.importAll(SW.storage.exportAll());
+  assertEqual(SW.storage.loadRunning(), null);
+});
+
+test('saveConfig lehnt eine Config ab, die die Uhr lahmlegen würde', () => {
+  // I9: hardStopMinutes 0 würde jede laufende Uhr sofort abwürgen.
+  clearSw();
+  const kaputt = SW.storage.loadConfig();
+  kaputt.hardStopMinutes = 0;
+  const res = SW.storage.saveConfig(kaputt);
+  assertEqual(res.ok, false);
+  assert(/hardStopMinutes/.test(res.error), 'Fehlertext: ' + res.error);
+  assertEqual(SW.storage.loadConfig().hardStopMinutes, 600);
+});
+
+test('saveConfig lehnt ein negatives Minimum ab', () => {
+  clearSw();
+  const kaputt = SW.storage.loadConfig();
+  kaputt.categories[0].minMinutes = -5;
+  assertEqual(SW.storage.saveConfig(kaputt).ok, false);
+});
+
+test('validateBackup prüft auch Zeitstempel und Tagesvorgaben', () => {
+  const b = SW.storage.exportAll();
+  b.logs = { '2026-11': { '2026-11-03': { target: '240', mins: {}, entries: [] } } };
+  assertEqual(SW.storage.validateBackup(b).ok, false);
+  const c = SW.storage.exportAll();
+  c.logs = { '2026-11': { '2026-11-03': { target: 240, mins: {}, entries: [{ id: 'e1', cat: 'haushalt', start: 'kein-datum', end: 'auch-nicht' }] } } };
+  assertEqual(SW.storage.validateBackup(c).ok, false);
+});
+
 runAll();
 </script>
 </body>

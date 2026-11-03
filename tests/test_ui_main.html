@@ -223,6 +223,86 @@ test('render zeigt den Stopp-Knopf bei laufender Kategorie', () => {
   clearSw();
 });
 
+suite('Hauptschirm: Befunde aus dem Review');
+
+test('model rechnet die laufende Uhr in die Tagessumme ein', () => {
+  // I1: Sonst steht die dominante Zahl still, solange man arbeitet.
+  clearSw();
+  SW.clock.start('umbau', new Date('2026-11-03T09:00:00'));
+  const m = SW.main.model(new Date('2026-11-03T11:00:00'), CFG, TAG, leererLoader());
+  assertEqual(m.total, 72 + 120);
+  assertEqual(m.rows[3].minutes, 120);
+  assertEqual(m.bar.filter(b => b.cat === 'umbau').length, 1);
+  clearSw();
+});
+
+test('model lässt den Tag durch die laufende Uhr grün werden', () => {
+  clearSw();
+  SW.clock.start('umbau', new Date('2026-11-03T08:00:00'));
+  const voll = tag('2026-11-03', [
+    eintrag('e1', 'haushalt', '2026-11-03', '05:00', 30),
+    eintrag('e2', 'bewerbung', '2026-11-03', '06:00', 30)
+  ]);
+  const m = SW.main.model(new Date('2026-11-03T11:00:00'), CFG, voll, leererLoader());
+  assertEqual(m.total, 240);
+  assertEqual(m.fulfilled, true);
+  clearSw();
+});
+
+test('model zählt von der laufenden Uhr nur den heutigen Teil', () => {
+  clearSw();
+  SW.clock.start('umbau', new Date('2026-11-02T22:00:00'));
+  const m = SW.main.model(new Date('2026-11-03T01:00:00'), CFG, null, leererLoader());
+  assertEqual(m.total, 60);
+  clearSw();
+});
+
+test('model zeigt eine stillgelegte laufende Kategorie trotzdem an', () => {
+  // I7: sonst gibt es keinen Stopp-Knopf mehr und die Uhr läuft weiter.
+  clearSw();
+  SW.clock.start('umbau', new Date('2026-11-03T09:00:00'));
+  const cfg = JSON.parse(JSON.stringify(CFG));
+  cfg.categories[3].active = false;
+  const m = SW.main.model(new Date('2026-11-03T10:00:00'), cfg, TAG, leererLoader());
+  const laufend = m.rows.filter(r => r.running);
+  assertEqual(laufend.length, 1);
+  assertEqual(laufend[0].cat, 'umbau');
+  clearSw();
+});
+
+test('model zeigt eine gelöschte laufende Kategorie als Unbekannt', () => {
+  clearSw();
+  SW.clock.start('verschwunden', new Date('2026-11-03T09:00:00'));
+  const m = SW.main.model(new Date('2026-11-03T10:00:00'), CFG, TAG, leererLoader());
+  const laufend = m.rows.filter(r => r.running)[0];
+  assert(laufend, 'keine laufende Zeile');
+  assertEqual(laufend.name, 'Unbekannt');
+  assertEqual(m.rows.length, 5);
+  clearSw();
+});
+
+test('render zeigt für die stillgelegte laufende Kategorie einen Stopp-Knopf', () => {
+  clearSw();
+  SW.clock.start('umbau', new Date('2026-11-03T09:00:00'));
+  const cfg = JSON.parse(JSON.stringify(CFG));
+  cfg.categories[3].active = false;
+  SW.main.render(buehne, SW.main.model(new Date('2026-11-03T10:00:00'), cfg, TAG, leererLoader()));
+  assertEqual(buehne.querySelectorAll('.btn.stop').length, 1);
+  clearSw();
+});
+
+test('model nennt die fehlenden Minima beim Namen', () => {
+  clearSw();
+  const m = SW.main.model(JETZT, CFG, TAG, leererLoader());
+  assert(m.missingNames.indexOf('Haushalt') !== -1, 'Namen fehlen: ' + m.missingNames);
+});
+
+test('model warnt vor dem nie gemachten Export', () => {
+  clearSw();
+  const hint = SW.main.model(JETZT, CFG, TAG, leererLoader()).exportHint;
+  assert(hint && /nie gesichert/.test(hint), 'Hinweis: ' + hint);
+});
+
 suite('Banner und Rückfrage');
 
 test('banner zeigt die Erinnerung als Streifen, nicht als Notification', () => {

@@ -89,7 +89,15 @@ SW.storage = (function () {
     return cfg;
   }
 
-  function saveConfig(cfg) { return writeKey(K_CONFIG, cfg); }
+  // Jede Config, die hier hereinkommt, wird geprüft — egal ob aus dem
+  // Formular, aus dem JSON-Feld oder aus einem Backup. Vorher konnten
+  // Formular und Import sich darüber uneinig sein, was gültig ist, und das
+  // Formular eine Config schreiben, die die Uhr lahmlegt (hardStopMinutes 0).
+  function saveConfig(cfg) {
+    const pruefung = validateBackup({ config: cfg });
+    if (!pruefung.ok) return { ok: false, error: pruefung.errors.join(' '), errors: pruefung.errors };
+    return writeKey(K_CONFIG, cfg);
+  }
 
   /* ── Protokoll ──────────────────────────────────────────────── */
 
@@ -107,6 +115,16 @@ SW.storage = (function () {
     const ym = monthOf(dateStr);
     const month = loadMonth(ym);
     month[dateStr] = rec;
+    return writeKey(logKey(ym), month);
+  }
+
+  // Nimmt einen Tag wieder heraus — gebraucht fürs Zurückrollen einer
+  // fehlgeschlagenen Buchung über die Tagesgrenze.
+  function removeDay(dateStr) {
+    const ym = monthOf(dateStr);
+    const month = loadMonth(ym);
+    if (!(dateStr in month)) return { ok: true };
+    delete month[dateStr];
     return writeKey(logKey(ym), month);
   }
 
@@ -209,12 +227,22 @@ SW.storage = (function () {
             if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) errors.push(`logs.${ym}.${d} ist kein Datum im Format YYYY-MM-DD.`);
             const rec = month[d];
             if (!rec || typeof rec !== 'object') { errors.push(`logs.${ym}.${d} ist kein Objekt.`); return; }
+            if (rec.target !== undefined && (!isInt(rec.target) || rec.target < 0)) {
+              errors.push(`logs.${ym}.${d}.target ist keine Minutenzahl.`);
+            }
+            if (rec.mins !== undefined && (!rec.mins || typeof rec.mins !== 'object' || Array.isArray(rec.mins))) {
+              errors.push(`logs.${ym}.${d}.mins ist kein Objekt.`);
+            }
             if (!Array.isArray(rec.entries)) { errors.push(`logs.${ym}.${d}.entries ist keine Liste.`); return; }
             rec.entries.forEach((e, i) => {
               if (!e || typeof e !== 'object') { errors.push(`logs.${ym}.${d}.entries[${i}] ist kein Objekt.`); return; }
               if (!isStr(e.cat) || !e.cat) errors.push(`logs.${ym}.${d}.entries[${i}].cat fehlt.`);
-              if (!isStr(e.start)) errors.push(`logs.${ym}.${d}.entries[${i}].start fehlt.`);
-              if (!isStr(e.end)) errors.push(`logs.${ym}.${d}.entries[${i}].end fehlt.`);
+              if (!isStr(e.start) || isNaN(new Date(e.start).getTime())) {
+                errors.push(`logs.${ym}.${d}.entries[${i}].start ist kein Zeitstempel.`);
+              }
+              if (!isStr(e.end) || isNaN(new Date(e.end).getTime())) {
+                errors.push(`logs.${ym}.${d}.entries[${i}].end ist kein Zeitstempel.`);
+              }
             });
           });
         });
@@ -223,20 +251,76 @@ SW.storage = (function () {
     return { ok: errors.length === 0, errors: errors };
   }
 
+  // Ein Backup einspielen heisst ersetzen, nicht mischen: Monate, die das
+  // Backup nicht kennt, verschwinden — sonst tragen alte Reste weiter zu
+  // Summen, Historie und Serie bei.
+  //
+  // Und es gilt ganz oder gar nicht: Vor der ersten Schreibung wird der
+  // komplette alte Zustand gesichert; scheitert irgendetwas, wird er
+  // zurückgespielt. Ein halb eingespieltes Backup wäre schlimmer als keines
+  // (Spec A4).
   function importAll(obj) {
     const check = validateBackup(obj);
     if (!check.ok) return { ok: false, errors: check.errors };
 
-    const res = saveConfig(obj.config);
-    if (!res.ok) return { ok: false, errors: [res.error] };
-
+    const sicherung = sicherungAllerSchluessel();
     const logs = obj.logs || {};
     const errors = [];
-    Object.keys(logs).forEach(ym => {
-      const w = writeKey(logKey(ym), logs[ym]);
-      if (!w.ok) errors.push(w.error);
+
+    listMonths().forEach(ym => {
+      if (!(ym in logs)) {
+        try { localStorage.removeItem(logKey(ym)); } catch (e) { errors.push(WRITE_ERROR); }
+      }
     });
-    return { ok: errors.length === 0, errors: errors };
+
+    if (errors.length === 0) {
+      const res = saveConfig(obj.config);
+      if (!res.ok) errors.push(res.error);
+    }
+
+    if (errors.length === 0) {
+      Object.keys(logs).forEach(ym => {
+        if (errors.length) return;
+        const w = writeKey(logKey(ym), logs[ym]);
+        if (!w.ok) errors.push(w.error);
+      });
+    }
+
+    if (errors.length > 0) {
+      sicherungZurueck(sicherung);
+      return { ok: false, errors: errors };
+    }
+
+    // Ein laufender Eintrag stammt aus der Welt vor dem Import und gehört
+    // nicht zu den eingespielten Daten.
+    clearRunning();
+    return { ok: true, errors: [] };
+  }
+
+  function eigeneSchluessel() {
+    const keys = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('sw_') === 0) keys.push(k);
+      }
+    } catch (e) { /* kein Zugriff */ }
+    return keys;
+  }
+
+  function sicherungAllerSchluessel() {
+    const stand = {};
+    eigeneSchluessel().forEach(k => { stand[k] = readRaw(k); });
+    return stand;
+  }
+
+  function sicherungZurueck(stand) {
+    try {
+      eigeneSchluessel().forEach(k => { if (!(k in stand)) localStorage.removeItem(k); });
+      Object.keys(stand).forEach(k => {
+        if (stand[k] !== null) localStorage.setItem(k, stand[k]);
+      });
+    } catch (e) { /* mehr als der Versuch ist nicht möglich */ }
   }
 
   return {
@@ -245,6 +329,7 @@ SW.storage = (function () {
     saveConfig: saveConfig,
     loadDay: loadDay,
     saveDay: saveDay,
+    removeDay: removeDay,
     loadMonth: loadMonth,
     listMonths: listMonths,
     loadRunning: loadRunning,

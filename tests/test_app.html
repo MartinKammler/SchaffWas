@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>app.js (Verdrahtung) – Unit Tests</title>
+</head>
+<body>
+<h1>app.js (Verdrahtung) – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<!-- Fixture: dieselbe Struktur wie index.html, damit app.js sich real
+     verdrahten kann. app.js wird NACH dem Aufbau geladen. -->
+<div id="fixture" style="position:absolute;left:-9999px;top:0">
+  <main>
+    <section id="screen-main" class="screen active"></section>
+    <section id="screen-log" class="screen"></section>
+    <section id="screen-history" class="screen"></section>
+    <section id="screen-settings" class="screen"></section>
+  </main>
+  <nav>
+    <button id="nav-main" data-screen="screen-main" class="active">Heute</button>
+    <button id="nav-log" data-screen="screen-log">Protokoll</button>
+    <button id="nav-history" data-screen="screen-history">Historie</button>
+    <button id="nav-settings" data-screen="screen-settings">Einstellungen</button>
+  </nav>
+</div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../clock.js"></script>
+<script src="../taunts.js"></script>
+<script src="../ui.js"></script>
+<script src="../ui-main.js"></script>
+<script src="../ui-log.js"></script>
+<script src="../ui-history.js"></script>
+<script src="../ui-settings.js"></script>
+<script src="_runner.js"></script>
+<script>
+function clearSw() {
+  Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
+}
+clearSw();
+</script>
+<script src="../app.js"></script>
+<script>
+const haupt = document.getElementById('screen-main');
+
+// app.js liest die echte Uhr. Für die Tests wird sie verschoben, damit
+// Zeitpunkte planbar sind.
+const ECHT_NOW = Date.now;
+function mitZeit(iso, fn) {
+  const fest = new Date(iso).getTime();
+  Date.now = () => fest;
+  const echtesDate = window.Date;
+  function FakeDate(...args) {
+    return args.length ? new echtesDate(...args) : new echtesDate(fest);
+  }
+  FakeDate.prototype = echtesDate.prototype;
+  FakeDate.now = () => fest;
+  FakeDate.parse = echtesDate.parse;
+  FakeDate.UTC = echtesDate.UTC;
+  window.Date = FakeDate;
+  try { return fn(); }
+  finally { window.Date = echtesDate; Date.now = ECHT_NOW; }
+}
+
+function tippe(el) {
+  // Echte Reihenfolge auf dem Handy: touchstart kommt vor click.
+  el.dispatchEvent(new Event('touchstart', { bubbles: true }));
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+suite('app: Rückfrage');
+
+test('ein Tipp auf "Nur bis letzte Berührung" bucht wirklich nur bis dahin', () => {
+  // C1: touchstart setzt lastSeen auf jetzt, bevor der Knopf antwortet.
+  // Der Trimm-Zeitpunkt muss aus der Rückfrage stammen, nicht aus dem Speicher.
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => SW.clock.start('haushalt', new Date()));
+  mitZeit('2026-11-03T09:32:00', () => SW.clock.touch(new Date()));
+
+  mitZeit('2026-11-03T14:00:00', () => {
+    document.dispatchEvent(new Event('visibilitychange'));
+    const knoepfe = document.querySelectorAll('.ask button');
+    assertEqual(knoepfe.length, 3);
+    assert(/09:32/.test(knoepfe[1].textContent), 'Knopf nennt: ' + knoepfe[1].textContent);
+    tippe(knoepfe[1]);
+  });
+
+  const es = SW.storage.loadDay('2026-11-03').entries;
+  assertEqual(es.length, 1);
+  assertEqual(es[0].src, 'trimmed');
+  assertEqual(SW.model.entryMinutes(es[0]), 32);
+  assertEqual(SW.storage.loadRunning(), null);
+});
+
+test('ein Tipp auf "Ja, voll buchen" lässt die Uhr weiterlaufen', () => {
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => SW.clock.start('haushalt', new Date()));
+  mitZeit('2026-11-03T14:00:00', () => {
+    document.dispatchEvent(new Event('visibilitychange'));
+    tippe(document.querySelectorAll('.ask button')[0]);
+  });
+  assert(SW.storage.loadRunning() !== null, 'Uhr wurde beendet');
+  assertEqual(SW.storage.loadRunning().asked, true);
+  assertEqual((SW.storage.loadDay('2026-11-03') || { entries: [] }).entries.length, 0);
+});
+
+test('ohne offene Rückfrage erscheint keine Box', () => {
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => SW.clock.start('haushalt', new Date()));
+  mitZeit('2026-11-03T09:10:00', () => document.dispatchEvent(new Event('visibilitychange')));
+  assertEqual(document.querySelector('.ask'), null);
+  SW.ui.clearBanner();
+});
+
+suite('app: Hinweise');
+
+test('die Erinnerung erscheint als Banner', () => {
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => SW.clock.start('haushalt', new Date()));
+  mitZeit('2026-11-03T09:50:00', () => document.dispatchEvent(new Event('visibilitychange')));
+  const b = document.querySelector('.banner.remind');
+  assert(b, 'Banner fehlt');
+  SW.ui.clearBanner();
+});
+
+test('ein Schreibfehler beim Stempeln wird angezeigt statt verschluckt', () => {
+  clearSw();
+  SW.main.render(haupt, SW.main.model(new Date('2026-11-03T09:00:00'), SW.storage.loadConfig(), null, () => null));
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { const e = new Error('voll'); e.name = 'QuotaExceededError'; throw e; };
+  try {
+    mitZeit('2026-11-03T09:00:00', () => tippe(haupt.querySelector('.btn.play')));
+  } finally { Storage.prototype.setItem = echt; }
+  const b = document.querySelector('.banner.error');
+  assert(b && /Speicher/.test(b.textContent), 'Fehlerbanner fehlt: ' + (b ? b.textContent : 'keins'));
+  SW.ui.clearBanner();
+});
+
+test('ein Schreibfehler beim hardstop wird angezeigt', () => {
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => SW.clock.start('haushalt', new Date()));
+  mitZeit('2026-11-03T12:00:00', () => SW.clock.touch(new Date()));
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { throw new Error('voll'); };
+  try {
+    mitZeit('2026-11-03T23:30:00', () => document.dispatchEvent(new Event('visibilitychange')));
+  } finally { Storage.prototype.setItem = echt; }
+  const b = document.querySelector('.banner.error');
+  assert(b, 'kein Fehlerbanner');
+  SW.ui.clearBanner();
+});
+
+suite('app: Stempeln über die Oberfläche');
+
+test('ein Tipp auf Start bucht und ein Tipp auf Stopp beendet', () => {
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => {
+    SW.main.render(haupt, SW.main.model(new Date(), SW.storage.loadConfig(), null, () => null));
+    tippe(haupt.querySelector('.row[data-cat=haushalt] .btn'));
+  });
+  assertEqual(SW.storage.loadRunning().cat, 'haushalt');
+  mitZeit('2026-11-03T09:45:00', () => tippe(haupt.querySelector('.row.run .btn')));
+  assertEqual(SW.storage.loadRunning(), null);
+  assertEqual(SW.model.entryMinutes(SW.storage.loadDay('2026-11-03').entries[0]), 45);
+});
+
+suite('app: laufende Anzeige');
+
+test('die Tagessumme waechst im Takt mit, der Spruch bleibt stehen', () => {
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => {
+    SW.clock.start('haushalt', new Date());
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  // Innerhalb desselben Spruch-Zustands bleiben (unterwegs: 25-75 %).
+  mitZeit('2026-11-03T10:30:00', () => SW.app.tick());
+  const spruch = haupt.querySelector('.taunt').textContent;
+  const zustand = SW.app.tauntState();
+  assertEqual(haupt.querySelector('.num-ist').textContent, '1:30');
+  assertEqual(haupt.querySelector('.row.run .nm em').textContent, 'Minimum erfüllt ✓');
+
+  mitZeit('2026-11-03T10:45:00', () => SW.app.tick());
+  assertEqual(haupt.querySelector('.num-ist').textContent, '1:45');
+  assertEqual(SW.app.tauntState(), zustand);
+  assertEqual(haupt.querySelector('.taunt').textContent, spruch);
+  SW.ui.clearBanner();
+  clearSw();
+});
+
+test('ein Zustandswechsel darf den Spruch wechseln', () => {
+  clearSw();
+  mitZeit('2026-11-03T09:00:00', () => {
+    SW.clock.start('haushalt', new Date());
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const vorher = SW.app.tauntState();
+  mitZeit('2026-11-03T14:00:00', () => SW.app.tick());
+  assert(SW.app.tauntState() !== vorher, 'Zustand blieb ' + vorher);
+  SW.ui.clearBanner();
+  clearSw();
+});
+
+runAll();
+</script>
+</body>
+</html>

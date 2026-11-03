@@ -7,8 +7,26 @@ SW.clock = (function () {
   const M = () => SW.model;
   const S = () => SW.storage;
 
+  // Zufalls-Id für Nachträge. Zwei Nachträge in derselben Millisekunde sind
+  // Handarbeit und praktisch ausgeschlossen; trotzdem wird kollisionsfrei
+  // weitergezählt (siehe freieId).
   function neueId(now) {
-    return 'e' + now.getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36);
+    return 'e' + now.getTime().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+  }
+
+  // Id eines gestempelten Eintrags: leitet sich aus seinem Start ab und ist
+  // damit über Versuche hinweg stabil. Das macht das Buchen wiederholbar —
+  // ein zweiter Stopp nach einem Schreibfehler kann denselben Abschnitt nicht
+  // ein zweites Mal anlegen.
+  function stempelId(startIso) {
+    return 's' + new Date(startIso).getTime().toString(36);
+  }
+
+  function freieId(rec, id) {
+    if (!rec || !Array.isArray(rec.entries)) return id;
+    let kandidat = id, n = 2;
+    while (rec.entries.some(e => e.id === kandidat)) { kandidat = id + '+' + n; n++; }
+    return kandidat;
   }
 
   function minutenZwischen(a, b) {
@@ -18,25 +36,47 @@ SW.clock = (function () {
 
   // Hängt Einträge an ihre Tage und legt bei einem noch leeren Tag den
   // Regel-Abzug an (Spec §7.2). Ein bestehender Abzug bleibt unangetastet.
+  //
+  // Ein Eintrag über Mitternacht berührt zwei Tage und womöglich zwei
+  // Monatsschlüssel. Schlägt die zweite Schreibung fehl, darf die erste nicht
+  // liegen bleiben: beim nächsten Stopp würde sie ein zweites Mal gebucht.
+  // Deshalb wird vorher gesichert und bei jedem Fehler zurückgerollt.
   function bucheTeile(teile, config) {
+    const vorher = [];
     for (let i = 0; i < teile.length; i++) {
       const teil = teile[i];
       const dateKey = M().dateKeyOf(teil.start);
+      vorher.push({ dateKey: dateKey, rec: S().loadDay(dateKey) });
+
       let rec = S().loadDay(dateKey);
       if (!rec) {
         const snap = M().snapshotRules(dateKey, config);
         rec = { target: snap.target, mins: snap.mins, entries: [] };
       }
+      // Schon gebucht (Wiederholung nach einem Fehlschlag)? Dann überspringen.
+      if (rec.entries.some(e => e.id === teil.id)) continue;
+
       rec.entries.push(teil);
       const res = S().saveDay(dateKey, rec);
-      if (!res.ok) return res;
+      if (!res.ok) {
+        rolleZurueck(vorher);
+        return res;
+      }
     }
     return { ok: true };
   }
 
+  function rolleZurueck(vorher) {
+    for (let i = vorher.length - 1; i >= 0; i--) {
+      const stand = vorher[i];
+      if (stand.rec) S().saveDay(stand.dateKey, stand.rec);
+      else S().removeDay(stand.dateKey);
+    }
+  }
+
   function beende(running, endeDate, src, config) {
     const eintrag = {
-      id: neueId(endeDate),
+      id: stempelId(running.start),
       cat: running.cat,
       start: running.start,
       end: M().toLocalIso(endeDate),
@@ -73,9 +113,9 @@ SW.clock = (function () {
 
   function touch(now) {
     const running = S().loadRunning();
-    if (!running) return;
+    if (!running) return { ok: true };
     running.lastSeen = M().toLocalIso(now);
-    S().saveRunning(running);
+    return S().saveRunning(running);
   }
 
   /* ── Rückfrage, Erinnerung, harte Obergrenze ────────────────── */
@@ -92,8 +132,10 @@ SW.clock = (function () {
     const laufzeit = minutenZwischen(start_, now);
     const unbeachtet = minutenZwischen(lastSeen, now);
 
-    // Harte Obergrenze: der Schutz gegen die durchlaufende Nacht.
-    if (laufzeit >= cfg.hardStopMinutes && !running.asked) {
+    // Harte Obergrenze: der Schutz gegen die durchlaufende Nacht — und nur
+    // dafür. Wer die App regelmäßig anfasst, arbeitet; dem wird die Uhr nicht
+    // unter den Händen weggenommen (Spec §6.4.1, A6).
+    if (laufzeit >= cfg.hardStopMinutes && !running.asked && unbeachtet >= cfg.askAfterMinutes) {
       const res = beende(running, lastSeen, 'autostop', cfg);
       if (!res.ok) return { action: 'none', error: res.error };
       S().clearRunning();
@@ -123,9 +165,14 @@ SW.clock = (function () {
     return { action: 'none', minutes: laufzeit };
   }
 
-  // choice: 'full' (weiterlaufen), 'trim' (bei lastSeen beenden),
-  // 'edit' (jetzt beenden und den Eintrag zum Bearbeiten melden).
-  function resolveAsk(choice, now) {
+  // choice: 'full' (weiterlaufen), 'trim' (beim Zeitpunkt der Rückfrage
+  // beenden), 'edit' (jetzt beenden und den Eintrag zum Bearbeiten melden).
+  //
+  // trimAt kommt aus dem Rückgabewert von checkOnVisible und ist der Grund,
+  // warum der Trimm-Zeitpunkt nicht hier frisch gelesen wird: auf dem Handy
+  // feuert touchstart vor dem click des Knopfes und hat lastSeen längst auf
+  // jetzt gesetzt. Der Zeitpunkt gehört zur Frage, nicht zur Antwort.
+  function resolveAsk(choice, now, trimAt) {
     const running = S().loadRunning();
     if (!running) return { ok: true };
     const cfg = S().loadConfig();
@@ -137,7 +184,8 @@ SW.clock = (function () {
     }
 
     if (choice === 'trim') {
-      const res = beende(running, new Date(running.lastSeen || running.start), 'trimmed', cfg);
+      const ziel = new Date(trimAt || running.lastSeen || running.start);
+      const res = beende(running, ziel, 'trimmed', cfg);
       if (!res.ok) return res;
       S().clearRunning();
       return { ok: true };
@@ -177,20 +225,36 @@ SW.clock = (function () {
     return `Überschneidet sich mit ${name} ${hhmm(von)}–${hhmm(bis)}`;
   }
 
-  function addManual(dateStr, catId, startIso, endIso) {
+  // Die laufende Uhr steht noch in keinem Tagesobjekt. Für die
+  // Überlappungsprüfung wird sie als virtueller Eintrag ergänzt — sonst
+  // lässt sich dieselbe Wanduhrzeit zweimal buchen (Spec §6.1, A2).
+  function mitLaufender(rec, dateStr, now) {
+    const liste = (rec && rec.entries) ? rec.entries.slice() : [];
+    const running = S().loadRunning();
+    if (!running) return liste;
+    const ende = now ? M().toLocalIso(now) : running.lastSeen;
+    const virtuell = { id: '__laufend__', cat: running.cat, start: running.start, end: ende };
+    M().splitAtMidnight(virtuell).forEach(teil => {
+      if (M().dateKeyOf(teil.start) === dateStr) liste.push(teil);
+    });
+    return liste;
+  }
+
+  function addManual(dateStr, catId, startIso, endIso, now) {
     const cfg = S().loadConfig();
-    const kandidat = { id: neueId(new Date()), cat: catId, start: startIso, end: endIso, src: 'manual' };
+    const kandidat = { id: neueId(now || new Date()), cat: catId, start: startIso, end: endIso, src: 'manual' };
     if (M().entryMinutes(kandidat) <= 0) {
       return { ok: false, error: 'Das Ende liegt vor dem Start.' };
     }
     const rec = ladeOderLege(dateStr, cfg);
-    const treffer = M().overlapOf(kandidat, rec.entries);
+    kandidat.id = freieId(rec, kandidat.id);
+    const treffer = M().overlapOf(kandidat, mitLaufender(rec, dateStr, now));
     if (treffer) return { ok: false, error: ueberschneidungsText(treffer, cfg) };
     rec.entries.push(kandidat);
     return S().saveDay(dateStr, rec);
   }
 
-  function editEntry(dateStr, id, patch) {
+  function editEntry(dateStr, id, patch, now) {
     const cfg = S().loadConfig();
     const rec = S().loadDay(dateStr);
     if (!rec) return { ok: false, error: 'Für diesen Tag gibt es keine Einträge.' };
@@ -199,7 +263,7 @@ SW.clock = (function () {
 
     const neu = Object.assign({}, rec.entries[idx], patch, { src: 'manual' });
     if (M().entryMinutes(neu) <= 0) return { ok: false, error: 'Das Ende liegt vor dem Start.' };
-    const treffer = M().overlapOf(neu, rec.entries);
+    const treffer = M().overlapOf(neu, mitLaufender(rec, dateStr, now));
     if (treffer) return { ok: false, error: ueberschneidungsText(treffer, cfg) };
 
     rec.entries[idx] = neu;

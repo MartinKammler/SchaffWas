@@ -24,29 +24,69 @@ SW.main = (function () {
 
   function exportHinweis(now) {
     const letzter = SW.storage.lastExportAt();
-    if (!letzter) return null;
+    // Wer nie exportiert hat, ist am meisten gefährdet — und bekam vorher
+    // als Einziger gar keinen Hinweis.
+    if (!letzter) return 'Noch nie gesichert. Ein Backup kostet zwei Tipper.';
     const tage = Math.floor((now.getTime() - new Date(letzter).getTime()) / 86400000);
     if (tage < EXPORT_HINWEIS_AB_TAGEN) return null;
     return `Letzter Export vor ${tage} Tagen.`;
   }
 
-  function model(now, config, dayRec, loadDay) {
+  // Die laufende Uhr steht in keinem Tagesobjekt. Ohne sie stünde die
+  // dominante Zahl still, solange gearbeitet wird (Spec G2, §6.1): deshalb
+  // wird sie als virtueller Eintrag eingerechnet — nur mit dem Teil, der auf
+  // den heutigen Tag fällt.
+  function mitLaufender(dayRec, dateKey, now, running) {
+    if (!running) return dayRec;
+    const virtuell = {
+      id: '__laufend__',
+      cat: running.cat,
+      start: running.start,
+      end: SW.model.toLocalIso(now),
+      src: 'timer'
+    };
+    const heute = SW.model.splitAtMidnight(virtuell)
+      .filter(teil => SW.model.dateKeyOf(teil.start) === dateKey);
+    if (!heute.length) return dayRec;
+    const basis = dayRec || { entries: [] };
+    return {
+      target: basis.target,
+      mins: basis.mins,
+      entries: (basis.entries || []).concat(heute)
+    };
+  }
+
+  // opts.taunt hält den Spruch fest: im Sekundentakt soll die Zahl laufen,
+  // nicht der Text springen.
+  function model(now, config, dayRec, loadDay, opts) {
     const dateKey = SW.model.dateKeyOf(now);
-    const status = SW.model.dayStatus(dateKey, dayRec, config);
+    const running = SW.storage.loadRunning();
+    const dayRecMitUhr = mitLaufender(dayRec, dateKey, now, running);
+    const status = SW.model.dayStatus(dateKey, dayRecMitUhr, config);
     const woche = SW.model.weekStatus(dateKey, loadDay, config);
     const wochenSummen = {};
     const range = SW.model.weekRange(dateKey);
     let tagImLauf = range.from;
     for (let i = 0; i < 7; i++) {
-      const rec = (tagImLauf === dateKey) ? dayRec : loadDay(tagImLauf);
+      const rec = (tagImLauf === dateKey)
+        ? dayRecMitUhr
+        : mitLaufender(loadDay(tagImLauf), tagImLauf, now, running);
       const t = SW.model.dayTotals(rec);
       Object.keys(t.byCat).forEach(cat => { wochenSummen[cat] = (wochenSummen[cat] || 0) + t.byCat[cat]; });
       tagImLauf = SW.model.shiftDays(tagImLauf, 1);
     }
     const wochenGesamt = Object.keys(wochenSummen).reduce((a, k) => a + wochenSummen[k], 0);
 
-    const running = SW.storage.loadRunning();
+    // Läuft eine Kategorie, die inzwischen stillgelegt oder gelöscht wurde,
+    // muss sie trotzdem eine Zeile bekommen — sonst gibt es keinen
+    // Stopp-Knopf mehr und die Uhr läuft unbemerkt weiter.
     const kategorien = aktive(config);
+    if (running && !kategorien.some(c => c.id === running.cat)) {
+      const bekannt = (config.categories || []).filter(c => c.id === running.cat)[0];
+      kategorien.push(bekannt
+        ? Object.assign({}, bekannt, { active: true })
+        : { id: running.cat, name: 'Unbekannt', color: '#6b7280', minMinutes: 0, minPeriod: 'day', active: true });
+    }
 
     // Der Balken zeigt den Anteil am Tagessoll; über 100 % wird gedeckelt,
     // damit er nicht aus dem Rahmen läuft.
@@ -75,12 +115,21 @@ SW.main = (function () {
 
     const streak = SW.model.streak(dateKey, loadDay, config);
     const gestern = SW.model.shiftDays(dateKey, -1);
-    const gesternStatus = SW.model.dayStatus(gestern, loadDay(gestern), config);
-    const streakBroken = streak === 0 && !gesternStatus.free;
+    const gesternRec = loadDay(gestern);
+    const gesternStatus = SW.model.dayStatus(gestern, gesternRec, config);
+    // Ohne jede Historie ist die Serie nicht gebrochen, sondern hat noch nicht
+    // angefangen — "Serie futsch" als allererster Satz der App wäre Unsinn.
+    const streakBroken = streak === 0 && !gesternStatus.free && !!gesternRec;
+    const tauntState = SW.taunts.stateFor({ dayStatus: status, weekStatus: woche, streakBroken: streakBroken, now: now });
 
     return {
       dateKey: dateKey,
-      taunt: SW.taunts.pick(SW.taunts.stateFor({ dayStatus: status, weekStatus: woche, streakBroken: streakBroken, now: now }), config),
+      tauntState: tauntState,
+      taunt: (opts && opts.taunt) ? opts.taunt : SW.taunts.pick(tauntState, config),
+      missingNames: status.missing.map(m => {
+        const k = (config.categories || []).filter(c => c.id === m.cat)[0];
+        return k ? k.name : m.cat;
+      }),
       total: status.total,
       target: status.target,
       fulfilled: status.fulfilled,
@@ -133,7 +182,7 @@ SW.main = (function () {
     const legend = el('div', 'legend');
     const rest = Math.max(0, m.target - m.total);
     legend.appendChild(el('span', null, m.free ? 'kein Soll heute' : (rest > 0 ? SW.ui.fmt(rest) + ' fehlen' : 'alles drin')));
-    legend.appendChild(el('span', null, m.missing.length ? m.missing.length + ' Minimum offen' : ''));
+    legend.appendChild(el('span', null, m.missingNames.length ? m.missingNames.join(', ') + ' offen' : ''));
     hero.appendChild(legend);
     root.appendChild(hero);
 

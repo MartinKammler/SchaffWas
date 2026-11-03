@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>model.js (Zeit) – Unit Tests</title>
+</head>
+<body>
+<h1>model.js (Zeit) – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script src="../model.js"></script>
+<script src="_runner.js"></script>
+<script>
+/* Die Tagesgrenzen-Tests rechnen in lokaler Zeit. Sie sind für Europe/Berlin
+   geschrieben — läuft die Suite in einer anderen Zone, schlägt der erste Test
+   fehl und sagt warum, statt dass die anderen rätselhaft kippen. */
+suite('model: Voraussetzung');
+
+test('Testumgebung läuft in Europe/Berlin', () => {
+  const jan = new Date(2026, 0, 15).getTimezoneOffset();
+  const jul = new Date(2026, 6, 15).getTimezoneOffset();
+  assertEqual(jan, -60, 'Winter-Offset ist nicht MEZ');
+  assertEqual(jul, -120, 'Sommer-Offset ist nicht MESZ');
+});
+
+suite('model: Zeitrechnung');
+
+test('entryMinutes rechnet normale Dauer', () => {
+  assertEqual(SW.model.entryMinutes({ start: '2026-11-03T09:05:00+01:00', end: '2026-11-03T09:35:00+01:00' }), 30);
+});
+
+test('entryMinutes liefert 0 bei rückwärts laufender Uhr', () => {
+  assertEqual(SW.model.entryMinutes({ start: '2026-11-03T10:00:00+01:00', end: '2026-11-03T09:00:00+01:00' }), 0);
+});
+
+test('entryMinutes liefert 0 bei fehlendem Ende', () => {
+  assertEqual(SW.model.entryMinutes({ start: '2026-11-03T10:00:00+01:00' }), 0);
+});
+
+test('entryMinutes zählt über die Sommerzeit-Umstellung nur echte Zeit', () => {
+  // 2027-03-28: 02:00 MEZ wird zu 03:00 MESZ. Wanduhr springt eine Stunde,
+  // echt vergangen sind 60 Minuten.
+  assertEqual(SW.model.entryMinutes({ start: '2027-03-28T01:30:00+01:00', end: '2027-03-28T03:30:00+02:00' }), 60);
+});
+
+test('dateKeyOf liefert den lokalen Kalendertag', () => {
+  assertEqual(SW.model.dateKeyOf('2026-11-03T23:40:00+01:00'), '2026-11-03');
+  assertEqual(SW.model.dateKeyOf('2026-11-03T23:40:00Z'), '2026-11-04');
+});
+
+suite('model: Tagesgrenze');
+
+test('splitAtMidnight lässt einen Eintrag innerhalb eines Tages unberührt', () => {
+  const e = { id: 'e1', cat: 'haushalt', start: '2026-11-03T09:00:00+01:00', end: '2026-11-03T10:00:00+01:00', src: 'timer' };
+  const parts = SW.model.splitAtMidnight(e);
+  assertEqual(parts.length, 1);
+  assertEqual(parts[0].id, 'e1');
+  assertEqual(parts[0].src, 'timer');
+});
+
+test('splitAtMidnight teilt einen Eintrag über Mitternacht', () => {
+  const parts = SW.model.splitAtMidnight({ id: 'e1', cat: 'haushalt', start: '2026-11-03T23:40:00+01:00', end: '2026-11-04T00:20:00+01:00' });
+  assertEqual(parts.length, 2);
+  assertEqual(SW.model.dateKeyOf(parts[0].start), '2026-11-03');
+  assertEqual(SW.model.dateKeyOf(parts[1].start), '2026-11-04');
+  assertEqual(SW.model.entryMinutes(parts[0]), 20);
+  assertEqual(SW.model.entryMinutes(parts[1]), 20);
+  assertEqual(parts[0].id, 'e1');
+  assertEqual(parts[1].id, 'e1-2');
+  assertEqual(parts[1].cat, 'haushalt');
+});
+
+test('splitAtMidnight teilt auch über mehrere Tage', () => {
+  const parts = SW.model.splitAtMidnight({ id: 'e1', cat: 'umbau', start: '2026-11-03T22:00:00+01:00', end: '2026-11-06T02:00:00+01:00' });
+  assertEqual(parts.length, 4);
+  assertEqual(SW.model.dateKeyOf(parts[3].start), '2026-11-06');
+  assertEqual(SW.model.entryMinutes(parts[1]), 24 * 60);
+});
+
+test('splitAtMidnight trifft die Grenze auch am 25-Stunden-Tag', () => {
+  // 2026-10-25: 03:00 MESZ wird zu 02:00 MEZ. Die Mitternachtsgrenze liegt
+  // trotzdem bei 00:00 lokaler Zeit, nicht 24 Stunden nach dem Start.
+  const parts = SW.model.splitAtMidnight({ id: 'e1', cat: 'verein', start: '2026-10-24T23:30:00+02:00', end: '2026-10-25T01:30:00+01:00' });
+  assertEqual(parts.length, 2);
+  assertEqual(SW.model.dateKeyOf(parts[0].start), '2026-10-24');
+  assertEqual(SW.model.dateKeyOf(parts[1].start), '2026-10-25');
+  assertEqual(SW.model.entryMinutes(parts[0]), 30);
+  assertEqual(SW.model.entryMinutes(parts[0]) + SW.model.entryMinutes(parts[1]), 180);
+});
+
+test('splitAtMidnight gibt bei rückwärts laufender Uhr einen einzigen Teil zurück', () => {
+  const parts = SW.model.splitAtMidnight({ id: 'e1', cat: 'haushalt', start: '2026-11-03T10:00:00+01:00', end: '2026-11-03T09:00:00+01:00' });
+  assertEqual(parts.length, 1);
+  assertEqual(SW.model.entryMinutes(parts[0]), 0);
+});
+
+suite('model: Überlappung');
+
+const BESTAND = [
+  { id: 'a', cat: 'haushalt',  start: '2026-11-03T09:00:00+01:00', end: '2026-11-03T10:00:00+01:00' },
+  { id: 'b', cat: 'bewerbung', start: '2026-11-03T10:00:00+01:00', end: '2026-11-03T10:45:00+01:00' }
+];
+
+test('overlapOf erkennt eine Überschneidung', () => {
+  const treffer = SW.model.overlapOf({ id: 'neu', start: '2026-11-03T10:30:00+01:00', end: '2026-11-03T11:00:00+01:00' }, BESTAND);
+  assert(treffer !== null, 'Überschneidung nicht erkannt');
+  assertEqual(treffer.id, 'b');
+});
+
+test('overlapOf wertet Berührung an den Rändern nicht als Überschneidung', () => {
+  assertEqual(SW.model.overlapOf({ id: 'neu', start: '2026-11-03T10:45:00+01:00', end: '2026-11-03T11:00:00+01:00' }, BESTAND), null);
+});
+
+test('overlapOf erkennt vollständig umschließende Einträge', () => {
+  const treffer = SW.model.overlapOf({ id: 'neu', start: '2026-11-03T08:00:00+01:00', end: '2026-11-03T12:00:00+01:00' }, BESTAND);
+  assertEqual(treffer.id, 'a');
+});
+
+test('overlapOf überspringt den Eintrag mit derselben id', () => {
+  assertEqual(SW.model.overlapOf({ id: 'b', start: '2026-11-03T10:00:00+01:00', end: '2026-11-03T10:50:00+01:00' }, BESTAND), null);
+});
+
+suite('model: Tagessummen');
+
+test('dayTotals summiert gesamt und je Kategorie', () => {
+  const t = SW.model.dayTotals({ entries: BESTAND });
+  assertEqual(t.total, 105);
+  assertEqual(t.byCat.haushalt, 60);
+  assertEqual(t.byCat.bewerbung, 45);
+});
+
+test('dayTotals behält unbekannte Kategorien', () => {
+  const t = SW.model.dayTotals({ entries: [{ id: 'x', cat: 'geloescht', start: '2026-11-03T09:00:00+01:00', end: '2026-11-03T09:25:00+01:00' }] });
+  assertEqual(t.byCat.geloescht, 25);
+  assertEqual(t.total, 25);
+});
+
+test('dayTotals kommt mit null und leerem Tag zurecht', () => {
+  assertEqual(SW.model.dayTotals(null).total, 0);
+  assertEqual(SW.model.dayTotals({ entries: [] }).total, 0);
+});
+
+runAll();
+</script>
+</body>
+</html>

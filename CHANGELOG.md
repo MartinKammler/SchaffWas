@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — 2026-11-03
+
+- **Die laufende Uhr rollt jenseits einer Stunde auf Stunden um:** `2:05:30`
+  statt `125:30`.
+- **Die Historie lässt sich durchblättern** — eine Woche beziehungsweise einen
+  Monat vor und zurück, mit einem „Heute“-Knopf zurück in die Gegenwart. Er
+  erscheint nur, wenn du wirklich woanders bist.
+- **Die Ansicht hängt nicht mehr über Mitternacht fest.** Bleibt die App über
+  Nacht offen, zeigt die Historie beim nächsten Blick die aktuelle Woche —
+  es sei denn, du hast selbst geblättert.
+- **Tage, die noch kommen, sehen nicht mehr nach Fehlschlag aus.** Sie stehen
+  gestrichelt und blass als „kommt noch“ da, statt als leere Balken in der
+  Reihe der verpassten Tage.
+
 ## 1.1.0 — 2026-11-03
 
 - **Startbild.** Beim Öffnen begrüßt der vollständige Sticker mit dem

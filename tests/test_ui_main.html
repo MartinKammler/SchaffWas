@@ -64,6 +64,13 @@ test('fmtHM zeigt immer Stunden und Minuten', () => {
 test('fmtClock zeigt Minuten und Sekunden', () => {
   assertEqual(SW.ui.fmtClock(1634), '27:14');
   assertEqual(SW.ui.fmtClock(5), '00:05');
+  assertEqual(SW.ui.fmtClock(3599), '59:59');
+});
+
+test('fmtClock rollt jenseits einer Stunde auf Stunden um', () => {
+  assertEqual(SW.ui.fmtClock(3600), '1:00:00');
+  assertEqual(SW.ui.fmtClock(7530), '2:05:30');
+  assertEqual(SW.ui.fmtClock(36000), '10:00:00');
 });
 
 suite('Hauptschirm-Modell');

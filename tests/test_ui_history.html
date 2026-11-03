@@ -140,6 +140,75 @@ test('render zeigt einen leeren Monat ohne Absturz', () => {
   assert(buehne.querySelector('.empty'), 'Hinweis fehlt');
 });
 
+suite('Historie: kommende Tage');
+
+test('weekModel markiert Tage, die noch kommen', () => {
+  const m = SW.history.weekModel('2026-11-03', loader({}), CFG, '2026-11-03');
+  assertEqual(m.days[0].future, false);  // Mo 02
+  assertEqual(m.days[1].future, false);  // Di 03 = heute
+  assertEqual(m.days[2].future, true);   // Mi 04
+  assertEqual(m.days[6].future, true);   // So 08
+});
+
+test('render stellt kommende Tage nicht als Fehlschlag dar', () => {
+  SW.history.render(buehne, SW.history.weekModel('2026-11-03', loader({}), CFG, '2026-11-03'), 'week');
+  assertEqual(buehne.querySelectorAll('.hist-day.kommt').length, 5);
+  assertEqual(buehne.querySelectorAll('.hist-day.offen').length, 2); // Mo und Di: vorbei bzw. laufend, nicht erfuellt
+});
+
+test('monthModel zaehlt kommende Tage nicht als unerfuellt', () => {
+  const m = SW.history.monthModel('2026-11', loader({}), CFG, '2026-11-03');
+  assertEqual(m.fulfilledCount, 0);
+  assertEqual(m.days.filter(d => d.future).length, 27);
+  assertEqual(m.verpasst, 2); // 02. und 03. November
+});
+
+suite('Historie: Blaettern');
+
+test('ein Klick blaettert eine Woche zurueck und wieder vor', () => {
+  SW.history.setAnker('2026-11-03');
+  SW.history.refresh(new Date('2026-11-03T10:00:00'));
+  buehne.querySelector('[name=zurueck]').click();
+  assert(/2026-10-26/.test(buehne.querySelector('h2').textContent), 'Kopf: ' + buehne.querySelector('h2').textContent);
+  buehne.querySelector('[name=vor]').click();
+  assert(/2026-11-02/.test(buehne.querySelector('h2').textContent), 'Kopf: ' + buehne.querySelector('h2').textContent);
+});
+
+test('nach dem Blaettern gibt es einen Weg zurueck in die Gegenwart', () => {
+  SW.history.setAnker('2026-11-03');
+  SW.history.refresh(new Date('2026-11-03T10:00:00'));
+  assertEqual(buehne.querySelector('[name=heute]'), null);
+  buehne.querySelector('[name=zurueck]').click();
+  const heute = buehne.querySelector('[name=heute]');
+  assert(heute, 'Heute-Knopf fehlt');
+  heute.click();
+  assert(/2026-11-02/.test(buehne.querySelector('h2').textContent), 'Kopf: ' + buehne.querySelector('h2').textContent);
+});
+
+test('ohne Blaettern zieht die Ansicht ueber Mitternacht mit', () => {
+  SW.history.setAnker('2026-11-03');
+  SW.history.refresh(new Date('2026-11-03T23:59:00'));
+  SW.history.refresh(new Date('2026-11-09T00:01:00'));
+  assert(/2026-11-09/.test(buehne.querySelector('h2').textContent), 'Kopf: ' + buehne.querySelector('h2').textContent);
+});
+
+test('nach dem Blaettern bleibt die Ansicht stehen', () => {
+  SW.history.setAnker('2026-11-03');
+  SW.history.refresh(new Date('2026-11-03T10:00:00'));
+  buehne.querySelector('[name=zurueck]').click();
+  SW.history.refresh(new Date('2026-11-09T00:01:00'));
+  assert(/2026-10-26/.test(buehne.querySelector('h2').textContent), 'Kopf: ' + buehne.querySelector('h2').textContent);
+});
+
+test('im Monat blaettert der Knopf einen Monat', () => {
+  SW.history.setAnker('2026-11-03');
+  SW.history.setAnsicht('month');
+  SW.history.refresh(new Date('2026-11-03T10:00:00'));
+  buehne.querySelector('[name=zurueck]').click();
+  assert(/2026-10/.test(buehne.querySelector('h2').textContent), 'Kopf: ' + buehne.querySelector('h2').textContent);
+  SW.history.setAnsicht('week');
+});
+
 runAll();
 </script>
 </body>

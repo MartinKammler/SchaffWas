@@ -34,9 +34,14 @@ SW.ui = (function () {
     return Math.floor(m / 60) + ':' + pad2(m % 60);
   }
 
+  // Unter einer Stunde mm:ss, darüber h:mm:ss — "125:30" liest sich sonst
+  // wie ein Tippfehler.
   function fmtClock(seconds) {
     const s = Math.max(0, Math.floor(seconds || 0));
-    return pad2(Math.floor(s / 60)) + ':' + pad2(s % 60);
+    const stunden = Math.floor(s / 3600);
+    const minuten = Math.floor((s % 3600) / 60);
+    if (stunden > 0) return stunden + ':' + pad2(minuten) + ':' + pad2(s % 60);
+    return pad2(minuten) + ':' + pad2(s % 60);
   }
 
   function fmtTime(iso) {

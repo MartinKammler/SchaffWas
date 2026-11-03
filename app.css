@@ -268,11 +268,22 @@ input, select {
 }
 .hist-day.ok { border-color: var(--ok); }
 .hist-day.frei { opacity: .5; }
+/* Was noch kommt, ist offen — nicht verpasst. */
+.hist-day.kommt { opacity: .35; border-style: dashed; }
+.hist-day.kommt .hd-zeit { font-style: italic; }
+.hist-day.offen .hd-balken i { background: #8a6d1f; }
+
+.hist-blaettern { display: flex; gap: 8px; margin-bottom: 12px; }
+.hist-blaettern button {
+  flex: 1; padding: 8px; border-radius: 10px; cursor: pointer; font-size: .7rem;
+  border: 1px solid var(--linie); background: var(--flaeche); color: var(--text);
+}
+.hist-blaettern .jetzt { border-color: var(--akzent); color: var(--akzent); font-weight: 700; }
 .hd-tag { font-size: .72rem; width: 54px; flex: none; font-variant-numeric: tabular-nums; }
 .hd-balken { flex: 1; height: 8px; border-radius: 4px; background: var(--linie); overflow: hidden; }
 .hd-balken i { display: block; height: 100%; background: var(--akzent); }
 .hist-day.ok .hd-balken i { background: var(--ok); }
-.hd-zeit { font-size: .7rem; width: 48px; text-align: right; flex: none; opacity: .75; font-variant-numeric: tabular-nums; }
+.hd-zeit { font-size: .7rem; width: 68px; text-align: right; flex: none; opacity: .75; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .hist-mins, .hist-cats { margin-top: 18px; }
 .hist-mins h3, .hist-cats h3 { font-size: .78rem; opacity: .6; margin: 0 0 8px; font-weight: 600; }

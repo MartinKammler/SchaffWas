@@ -97,6 +97,14 @@ SW.settings = (function () {
 
   function render(root, config, hinweis) {
     root.innerHTML = '';
+
+    // Der Schriftzug darf hier groß stehen — hier ist Platz (Spec §8).
+    const schriftzug = document.createElement('img');
+    schriftzug.className = 'set-schriftzug';
+    schriftzug.src = './Logo-Schriftzug.png';
+    schriftzug.alt = 'Schaff was!';
+    root.appendChild(schriftzug);
+
     root.appendChild(el('h2', null, 'Einstellungen'));
     if (hinweis) root.appendChild(el('p', 'set-hinweis', hinweis));
 

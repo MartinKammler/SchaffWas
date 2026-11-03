@@ -33,6 +33,51 @@ main {
 
 h2 { font-size: 1.05rem; margin: 2px 0 12px; }
 
+/* ── Startbild ───────────────────────────────────────────────── */
+
+#splash {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 28px;
+  background: radial-gradient(circle at 50% 42%, #1d2127 0%, var(--bg) 70%);
+  opacity: 1; transition: opacity .32s ease;
+}
+#splash.weg { opacity: 0; pointer-events: none; }
+
+/* Der Sticker trägt den Schriftzug bereits — daneben steht nur noch,
+   worum es geht. */
+#splash-sau {
+  width: min(82vw, 340px); height: auto;
+  filter: drop-shadow(0 16px 36px rgba(0, 0, 0, .55));
+  animation: splash-sau-rein .45s ease-out both;
+}
+#splash-zeile {
+  margin: 4px 0 0; text-align: center;
+  font-size: .8rem; letter-spacing: .3px; color: var(--akzent);
+  animation: splash-text-rein .45s .12s ease-out both;
+}
+
+@keyframes splash-sau-rein {
+  from { opacity: 0; transform: scale(.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes splash-text-rein {
+  from { opacity: 0; transform: translateY(10px) rotate(-2deg); }
+  to   { opacity: 1; transform: translateY(0) rotate(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #splash-sau, #splash-zeile { animation: none; }
+  #splash { transition: none; }
+}
+
+/* Der Schriftzug sitzt auf einem Sticker mit weißem Rand — auf dunklem
+   Grund braucht er keine zusätzliche Fläche. */
+.set-schriftzug {
+  display: block; width: min(62%, 220px); height: auto;
+  margin: 0 auto 18px;
+}
+
 /* ── Kopf mit Sau und Spruch ─────────────────────────────────── */
 
 .kopf { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }

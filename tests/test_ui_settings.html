@@ -190,6 +190,15 @@ test('requestPersist meldet einen Status, wenn die API da ist', async () => {
   assert(['dauerhaft', 'nicht garantiert', 'unbekannt'].indexOf(s) !== -1, 'Status: ' + s);
 });
 
+test('der Einstellungs-Kopf traegt den Schriftzug', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  const bild = buehne.querySelector('.set-schriftzug');
+  assert(bild, 'Schriftzug fehlt');
+  assert(bild.getAttribute('src').indexOf('Logo-Schriftzug.png') !== -1, 'falsches Bild: ' + bild.getAttribute('src'));
+  assertEqual(bild.getAttribute('alt'), 'Schaff was!');
+});
+
 test('render zeigt die App-Version', () => {
   clearSw();
   SW.settings.render(buehne, cfg());

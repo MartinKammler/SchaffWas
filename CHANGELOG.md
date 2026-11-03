@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 — 2026-11-03
+
+- **Startbild.** Beim Öffnen begrüßt der vollständige Sticker mit dem
+  „Schaff was!“-Schriftzug. Er geht nach knapp anderthalb Sekunden von selbst
+  weg — oder sofort, wenn man ihn antippt.
+- Der Schriftzug steht jetzt auch über den Einstellungen. Damit sind alle drei
+  Logo-Dateien im Einsatz: der Sticker auf dem Startbild, der Schriftzug auf
+  Startbild und Einstellungen, das Schwein allein im Kopf des Hauptschirms und
+  als App-Icon.
+
 ## 1.0.1 — 2026-11-03
 
 Behebt Befunde aus dem Abschluss-Review, wichtigster zuerst:

@@ -127,12 +127,38 @@
     });
   }
 
+  // Startbild: der volle Sticker mit Schriftzug. Zeigt sich beim Öffnen und
+  // geht nach kurzer Zeit oder beim ersten Tipp weg — es soll begrüßen, nicht
+  // aufhalten (Spec §8).
+  const SPLASH_MS = 1400;
+  let splashTimer = null;
+
+  function versteckeStartbild() {
+    const splash = document.getElementById('splash');
+    if (!splash || splash.classList.contains('weg')) return;
+    splash.classList.add('weg');
+    if (splashTimer) { clearTimeout(splashTimer); splashTimer = null; }
+  }
+
+  function zeigeStartbild(dauer) {
+    const splash = document.getElementById('splash');
+    if (!splash) return;
+    splash.classList.remove('weg');
+    if (splashTimer) clearTimeout(splashTimer);
+    splashTimer = setTimeout(versteckeStartbild, dauer === undefined ? SPLASH_MS : dauer);
+    splash.addEventListener('click', versteckeStartbild, { once: true });
+    splash.addEventListener('touchstart', versteckeStartbild, { once: true, passive: true });
+  }
+
   // Fürs Testen und fürs Nachziehen von außen.
   SW.app = {
+    zeigeStartbild: zeigeStartbild,
+    versteckeStartbild: versteckeStartbild,
     zeichne: zeichne,
     tick: function () { return zeichne(true); },
     tauntState: function () { return letzterZustand; }
   };
 
   pruefe();
+  zeigeStartbild();
 })();

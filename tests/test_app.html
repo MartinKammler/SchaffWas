@@ -12,6 +12,10 @@
 <!-- Fixture: dieselbe Struktur wie index.html, damit app.js sich real
      verdrahten kann. app.js wird NACH dem Aufbau geladen. -->
 <div id="fixture" style="position:absolute;left:-9999px;top:0">
+  <div id="splash">
+    <img id="splash-sau" src="../Logo.png" alt="Schaff was!">
+    <p id="splash-zeile">Stempeluhr gegen den inneren Schweinehund</p>
+  </div>
   <main>
     <section id="screen-main" class="screen active"></section>
     <section id="screen-log" class="screen"></section>
@@ -202,6 +206,29 @@ test('ein Zustandswechsel darf den Spruch wechseln', () => {
   assert(SW.app.tauntState() !== vorher, 'Zustand blieb ' + vorher);
   SW.ui.clearBanner();
   clearSw();
+});
+
+suite('app: Startbild');
+
+test('das Startbild zeigt den Sticker und verschwindet von selbst', async () => {
+  const splash = document.getElementById('splash');
+  SW.app.zeigeStartbild(60);
+  assert(!splash.classList.contains('weg'), 'Startbild wurde nicht gezeigt');
+  const sticker = splash.querySelector('#splash-sau');
+  assert(sticker.getAttribute('src').indexOf('Logo.png') !== -1, 'Sticker fehlt');
+  assertEqual(sticker.getAttribute('alt'), 'Schaff was!');
+  // Der Sticker traegt den Schriftzug bereits — kein zweites Mal daneben.
+  assertEqual(splash.querySelectorAll('img').length, 1);
+  await new Promise(r => setTimeout(r, 160));
+  assert(splash.classList.contains('weg'), 'Startbild blieb stehen');
+});
+
+test('ein Tipp schickt das Startbild sofort weg', () => {
+  const splash = document.getElementById('splash');
+  SW.app.zeigeStartbild(100000);
+  assert(!splash.classList.contains('weg'), 'Startbild wurde nicht gezeigt');
+  tippe(splash);
+  assert(splash.classList.contains('weg'), 'Tipp hat nichts bewirkt');
 });
 
 runAll();

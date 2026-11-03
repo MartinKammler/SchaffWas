@@ -391,10 +391,15 @@ Rot auf gelbem Knall:
   RGB-Datei mit weißem Grund setzt es sonst einen weißen Kasten auf den dunklen
   Hintergrund. Das Ergebnis ersetzt die Datei im Repo.
 - **Kopfzeile des Hauptschirms:** kein doppelter Titel. Oben links
-  `Logo-Sau.png` klein (ca. 44 px), rechts daneben der Spruch. Der Schriftzug
-  (`Logo-Schriftzug.png`) erscheint groß auf dem Startbild und im
-  Einstellungs-Screen; der vollständige Sticker `Logo.png` nur dort, wo Platz
-  ist (Startbild, "Über die App").
+  `Logo-Sau.png` klein (ca. 44 px), rechts daneben der Spruch.
+- **Startbild:** beim Öffnen der vollständige Sticker `Logo.png`, darunter
+  eine Zeile ("Stempeluhr gegen den inneren Schweinehund"). Geht nach 1,4 s
+  von selbst weg oder sofort auf Tipp. **Kein** zweiter Schriftzug daneben —
+  der Sticker trägt ihn bereits. *(Korrigiert nach dem ersten Bau: die
+  ursprüngliche Fassung dieses Absatzes forderte beides nebeneinander, was
+  den Schriftzug doppelt zeigte.)*
+- **Einstellungen:** `Logo-Schriftzug.png` groß über der Überschrift — dort
+  ist Platz und der Schriftzug steht allein.
 - **App-Icon (`Logo-icon.png`, 512×512):** der volle Sticker ist bei 48 px
   unlesbar. Icon wird ein **enger Ausschnitt aus `Logo-Sau.png` auf Kopf,
   Sonnenbrille und Oberkörper** auf gelbem Grund (`#f7d038`), ohne Text.

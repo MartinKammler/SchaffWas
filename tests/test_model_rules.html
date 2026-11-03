@@ -191,6 +191,81 @@ test('streak liefert 0 ohne jede Historie', () => {
   assertEqual(SW.model.streak('2026-11-04', loaderAus({}), CFG), 0);
 });
 
+suite('model: Wochen-Minima im Nachhinein');
+
+test('weekStatus nimmt die Wochen-Minima aus dem gespeicherten Abzug', () => {
+  // Wird das Vereins-Minimum spaeter erhoeht, duerfen alte Wochen nicht
+  // rueckwirkend unerfuellt werden -- derselbe Grund wie beim Tagesabzug.
+  const map = {
+    '2026-11-02': tag('2026-11-02', { verein: 120 }),
+    '2026-11-03': tag('2026-11-03', VOLL)
+  };
+  const spaeter = cfgKopie();
+  spaeter.categories[2].minMinutes = 180;  // Verein von 2 h auf 3 h
+
+  const w = SW.model.weekStatus('2026-11-03', loaderAus(map), spaeter);
+  assertEqual(w.byCat.verein.need, 120, 'das Minimum der Woche muss das von damals bleiben');
+  assertEqual(w.byCat.verein.have, 180, 'Montag 120 + Dienstag 60');
+  assertEqual(w.byCat.verein.have >= w.byCat.verein.need, true);
+});
+
+test('weekStatus faellt ohne gespeicherten Abzug auf die aktuelle Config zurueck', () => {
+  const spaeter = cfgKopie();
+  spaeter.categories[2].minMinutes = 180;
+  const w = SW.model.weekStatus('2026-11-03', loaderAus({}), spaeter);
+  assertEqual(w.byCat.verein.need, 180);
+});
+
+test('weekStatus nimmt den Abzug des ersten Tages der Woche mit Eintraegen', () => {
+  const frueh = cfgKopie();
+  frueh.categories[3].minMinutes = 60;   // Umbau 1 h/Woche am Montag
+  const spaet = cfgKopie();
+  spaet.categories[3].minMinutes = 300;  // spaeter auf 5 h erhoeht
+  const map = {
+    '2026-11-02': tag('2026-11-02', { umbau: 60 }, frueh),
+    '2026-11-04': tag('2026-11-04', { umbau: 30 }, spaet)
+  };
+  assertEqual(SW.model.weekStatus('2026-11-05', loaderAus(map), spaet).byCat.umbau.need, 60);
+});
+
+suite('model: Mitternacht in schwierigen Zeitzonen');
+
+test('nextMidnight liefert immer den Beginn des Folgetages', () => {
+  // Invariante, die auch in Zonen mit Umstellung um 00:00 gelten muss.
+  const anfang = new Date(2026, 0, 1, 15, 30);
+  for (let i = 0; i < 400; i++) {
+    const d = new Date(anfang.getTime());
+    d.setDate(d.getDate() + i);
+    const grenze = SW.model.nextMidnight(d);
+    assert(grenze.getTime() > d.getTime(), 'Grenze nicht nach dem Zeitpunkt: ' + d);
+    assertEqual(SW.model.dateKeyOf(grenze), SW.model.shiftDays(SW.model.dateKeyOf(d), 1),
+      'falscher Tag fuer ' + SW.model.dateKeyOf(d) + ': ' + SW.model.dateKeyOf(grenze));
+    assert(grenze.getTime() - d.getTime() <= 25 * 3600 * 1000, 'Grenze zu weit weg');
+  }
+});
+
+test('nextMidnight trifft auch, wenn es um 00:00 keine gueltige Zeit gibt', () => {
+  // Nachgestellt: eine Zeitrechnung, in der 00:00 des Folgetages
+  // uebersprungen wird (wie in Chile oder auf Kuba).
+  const echt = Date.prototype.setHours;
+  Date.prototype.setHours = function (h, m, s, ms) {
+    const r = echt.call(this, h, m, s, ms);
+    // 00:00 existiert an diesem Tag nicht -> der Browser landet auf 01:00
+    if (h === 0 && this.getDate() === 4 && this.getMonth() === 10) {
+      echt.call(this, 1, 0, 0, 0);
+    }
+    return r;
+  };
+  let grenze;
+  try {
+    grenze = SW.model.nextMidnight(new Date(2026, 10, 3, 22, 0));
+  } finally {
+    Date.prototype.setHours = echt;
+  }
+  assertEqual(SW.model.dateKeyOf(grenze), '2026-11-04');
+  assertEqual(grenze.getHours(), 1);
+});
+
 runAll();
 </script>
 </body>

@@ -182,13 +182,29 @@ SW.model = (function () {
     return { from: from, to: shiftDays(from, 6) };
   }
 
+  // Welche Wochen-Minima galten in dieser Woche? Dieselbe Überlegung wie
+  // beim Tagesabzug (§7.2): Wer sein Vereins-Minimum später von 2 h auf 3 h
+  // hebt, soll damit nicht rückwirkend alte Wochen entwerten. Ein eigener
+  // Wochen-Abzug ist dafür nicht nötig — die Tagesdatensätze tragen die
+  // Regeln bereits. Maßgeblich ist der erste Tag der Woche, für den ein
+  // Datensatz existiert.
+  function wochenRegeln(range, loadDay, config) {
+    let tag = range.from;
+    for (let i = 0; i < 7; i++) {
+      const rec = loadDay(tag);
+      if (rec && rec.mins) return rec.mins;
+      tag = shiftDays(tag, 1);
+    }
+    return snapshotRules(range.from, config).mins;
+  }
+
   function weekStatus(dateStr, loadDay, config) {
     const range = weekRange(dateStr);
-    const rules = snapshotRules(dateStr, config);
+    const mins = wochenRegeln(range, loadDay, config);
     const byCat = {};
-    Object.keys(rules.mins).forEach(cat => {
-      if (rules.mins[cat][1] === 'week' && rules.mins[cat][0] > 0) {
-        byCat[cat] = { have: 0, need: rules.mins[cat][0] };
+    Object.keys(mins).forEach(cat => {
+      if (mins[cat][1] === 'week' && mins[cat][0] > 0) {
+        byCat[cat] = { have: 0, need: mins[cat][0] };
       }
     });
 
@@ -229,6 +245,7 @@ SW.model = (function () {
   return {
     toLocalIso: toLocalIso,
     dateKeyOf: dateKeyOf,
+    wochenRegeln: wochenRegeln,
     nextMidnight: nextMidnight,
     shiftDays: shiftDays,
     entryMinutes: entryMinutes,

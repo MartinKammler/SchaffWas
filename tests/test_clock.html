@@ -529,6 +529,39 @@ test('editEntry kann einen Eintrag ueber Mitternacht ziehen', () => {
   assertEqual(SW.model.entryMinutes(eintraege('2026-11-04')[0]), 30);
 });
 
+suite('clock: Schreiblast');
+
+test('touch schreibt nicht bei jedem Tastendruck', () => {
+  // Jede Beruehrung zwei synchrone Schreibvorgaenge waere beim Tippen im
+  // JSON-Feld zwei pro Zeichen. Fuer eine 90-Minuten-Schwelle reicht
+  // deutlich weniger.
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const echt = Storage.prototype.setItem;
+  let schreibt = 0;
+  Storage.prototype.setItem = function (k, v) { if (k === 'sw_running') schreibt++; return echt.call(this, k, v); };
+  try {
+    const basis = t('09:30').getTime();
+    for (let i = 0; i < 50; i++) SW.clock.touch(new Date(basis + i * 100)); // 50 Tipper in 5 s
+  } finally { Storage.prototype.setItem = echt; }
+  assertEqual(schreibt, 1, 'es wurde ' + schreibt + '-mal geschrieben');
+});
+
+test('touch haelt lastSeen trotzdem aktuell genug', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('09:30'));
+  SW.clock.touch(t('10:30'));
+  assertEqual(new Date(SW.storage.loadRunning().lastSeen).getTime(), t('10:30').getTime());
+});
+
+test('touch meldet auch dann Erfolg, wenn es nichts zu schreiben gibt', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('09:30'));
+  assertEqual(SW.clock.touch(t('09:30')).ok, true);
+});
+
 runAll();
 </script>
 </body>

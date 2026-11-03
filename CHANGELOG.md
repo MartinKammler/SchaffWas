@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.1 — 2026-11-03
+
+Der angekündigte Kleinkram.
+
+- **Wochen-Minima werden nicht mehr rückwirkend verschärft.** Wer sein
+  Vereins-Minimum später von 2 h auf 3 h hebt, entwertet damit keine alten
+  Wochen mehr. Ein eigener Wochen-Abzug war dafür nicht nötig — die
+  Tagesdatensätze tragen die Regeln bereits; maßgeblich ist der erste Tag der
+  Woche mit Einträgen.
+- **Die Uhr schreibt beim Tippen nicht mehr mit.** Jede Berührung löste bisher
+  zwei Schreibvorgänge aus, im JSON-Kasten also zwei pro Zeichen. Jetzt
+  höchstens alle 30 Sekunden — bei einer Schwelle von 90 Minuten ändert das an
+  der Rückfrage nichts.
+- Nachgeprüft und **nicht** geändert: die Tagesgrenze in Zeitzonen, die um
+  00:00 umstellen (Chile, Kuba). `setHours(0,0,0,0)` landet dort auf dem ersten
+  existierenden Zeitpunkt des Tages — und genau der ist die richtige Grenze.
+  Zwei Tests halten die Invariante jetzt fest, statt sie zu vermuten.
+
 ## 1.4.0 — 2026-11-03
 
 Der Rest der Befunde aus dem externen technischen Review.

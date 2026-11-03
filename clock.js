@@ -111,9 +111,18 @@ SW.clock = (function () {
     return S().saveRunning({ cat: catId, start: iso, lastSeen: iso, reminded: false, asked: false });
   }
 
+  // Jede Berührung schreibt sonst zweimal synchron in den Speicher — beim
+  // Tippen im JSON-Feld zwei Schreibvorgänge je Zeichen. Für eine Schwelle
+  // von 90 Minuten reicht es völlig, höchstens alle 30 Sekunden
+  // nachzuziehen; der Zeitpunkt der letzten Berührung wird dadurch um
+  // maximal eine halbe Minute ungenau.
+  const TOUCH_ABSTAND_MS = 30000;
+
   function touch(now) {
     const running = S().loadRunning();
     if (!running) return { ok: true };
+    const alt = new Date(running.lastSeen || running.start);
+    if (now.getTime() - alt.getTime() < TOUCH_ABSTAND_MS) return { ok: true };
     running.lastSeen = M().toLocalIso(now);
     return S().saveRunning(running);
   }

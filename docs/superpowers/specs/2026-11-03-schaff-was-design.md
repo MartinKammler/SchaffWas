@@ -182,7 +182,10 @@ Tag durch, und die 4 Stunden stehen abends da. Mehr nicht.
   Wochen-Minima gehen **nicht** in die Tageserfüllung ein.
 - **Woche erfüllt** = alle Tage der Woche erfüllt **und** jede aktive Kategorie
   mit `minPeriod: "week"` hat ihr Minimum in dieser Woche erreicht. Die Woche
-  läuft Montag bis Sonntag. Sie wird nur in der Historie bewertet und bricht
+  läuft Montag bis Sonntag. Welche Wochen-Minima galten, steht im **Abzug des
+  ersten Tages der Woche mit Einträgen** — derselbe Gedanke wie beim Tagesabzug
+  (§7.2): eine spätere Erhöhung entwertet keine alte Woche. Ein eigener
+  Wochen-Abzug ist dafür nicht nötig. Sie wird nur in der Historie bewertet und bricht
   keine Tagesserie.
 - Auf dem Hauptschirm zeigen Kategorien mit Wochen-Minimum ihren
   **Wochenstand** ("1:30 / 2:00 diese Woche"), Kategorien mit Tagesminimum

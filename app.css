@@ -240,3 +240,62 @@ input, select {
 .hist-min .nm, .hist-cat .nm { flex: 1; font-weight: 600; }
 .hist-min .tm, .hist-cat .tm { opacity: .7; font-variant-numeric: tabular-nums; font-size: .72rem; }
 .hist-summe { font-size: .72rem; opacity: .6; margin: 10px 0 0; }
+
+/* ── Einstellungen ───────────────────────────────────────────── */
+
+h3 { font-size: .78rem; opacity: .6; margin: 20px 0 8px; font-weight: 600; }
+
+.set-hinweis {
+  background: rgba(240, 180, 41, .12); border: 1px solid var(--akzent);
+  color: var(--akzent); border-radius: 10px; padding: 9px 11px;
+  font-size: .74rem; margin: 0 0 12px;
+}
+
+.set-kat {
+  background: var(--flaeche); border: 1px solid var(--linie);
+  border-radius: 12px; padding: 10px; margin-bottom: 8px;
+}
+.set-kat-kopf { display: flex; gap: 8px; margin-bottom: 8px; }
+.set-kat-kopf input[type=color] { width: 40px; height: 34px; padding: 2px; flex: none; }
+.set-kat-kopf input[type=text] { flex: 1; }
+.set-kat-zeile { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.set-kat-zeile input { width: 72px; }
+.set-kat-zeile select { flex: 1; }
+.set-kat-fuss { display: flex; align-items: center; justify-content: space-between; }
+.schalter { display: flex; align-items: center; gap: 6px; font-size: .74rem; }
+
+.set-neu { display: flex; gap: 8px; margin-top: 10px; }
+.set-neu input { flex: 1; }
+
+.set-ziele { display: flex; flex-direction: column; gap: 6px; }
+.set-ziel {
+  display: flex; align-items: center; gap: 8px; font-size: .76rem;
+  background: var(--flaeche); border: 1px solid var(--linie);
+  border-radius: 10px; padding: 7px 10px;
+}
+.set-ziel span:first-child { flex: 1; }
+.set-ziel input { width: 76px; }
+.einheit { opacity: .5; font-size: .7rem; }
+
+.set-fussnote { font-size: .68rem; opacity: .5; line-height: 1.4; margin: 8px 0 0; }
+.set-version { font-size: .68rem; opacity: .4; margin-top: 22px; text-align: center; }
+
+.export-stand { font-size: .74rem; opacity: .75; margin: 0 0 10px; }
+.json-fehler { color: var(--stopp); font-size: .72rem; margin: 6px 0; }
+
+textarea {
+  width: 100%; background: #11141a; color: var(--text);
+  border: 1px solid var(--linie); border-radius: 8px; padding: 9px;
+  font-family: ui-monospace, monospace; font-size: .7rem;
+}
+
+#screen-settings button {
+  padding: 10px 14px; border-radius: 10px; cursor: pointer; font-size: .76rem;
+  border: 1px solid var(--linie); background: #262b33; color: var(--text);
+  margin-bottom: 8px;
+}
+#screen-settings .primaer { background: var(--akzent); color: #2a1d00; border-color: var(--akzent); font-weight: 700; }
+#screen-settings .gefahr { background: transparent; color: var(--stopp); border-color: var(--stopp); margin: 0; }
+#screen-settings .klein { padding: 5px 10px; font-size: .68rem; }
+#screen-settings .breit { width: 100%; }
+#screen-settings input[type=file] { display: block; margin-bottom: 10px; font-size: .72rem; }

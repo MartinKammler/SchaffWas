@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Einstellungen – Unit Tests</title>
+</head>
+<body>
+<h1>Einstellungen – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+<div id="buehne" style="display:none"></div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../clock.js"></script>
+<script src="../ui.js"></script>
+<script src="../ui-settings.js"></script>
+<script src="_runner.js"></script>
+<script>
+const buehne = document.getElementById('buehne');
+
+function clearSw() {
+  Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
+}
+
+function cfg() { return SW.storage.loadConfig(); }
+
+suite('Einstellungen: Formular');
+
+test('render und collect sind zueinander invers', () => {
+  clearSw();
+  const c = cfg();
+  SW.settings.render(buehne, c);
+  assertDeepEqual(SW.settings.collect(buehne), c);
+});
+
+test('collect übernimmt geänderte Tagesziele', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="target-sat"]').value = '120';
+  assertEqual(SW.settings.collect(buehne).dayTargets.sat, 120);
+});
+
+test('collect übernimmt geänderte Minimum-Zeiträume', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="cat-verein-period"]').value = 'day';
+  buehne.querySelector('[name="cat-verein-min"]').value = '45';
+  const c = SW.settings.collect(buehne);
+  const verein = c.categories.filter(x => x.id === 'verein')[0];
+  assertEqual(verein.minPeriod, 'day');
+  assertEqual(verein.minMinutes, 45);
+});
+
+test('collect übernimmt den Aktiv-Schalter und den Namen', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="cat-umbau-active"]').checked = false;
+  buehne.querySelector('[name="cat-haushalt-name"]').value = 'Putzen';
+  const c = SW.settings.collect(buehne);
+  assertEqual(c.categories.filter(x => x.id === 'umbau')[0].active, false);
+  assertEqual(c.categories.filter(x => x.id === 'haushalt')[0].name, 'Putzen');
+});
+
+test('collect übernimmt die Zeiten für Erinnerung und Rückfrage', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="askAfterMinutes"]').value = '60';
+  buehne.querySelector('[name="hardStopMinutes"]').value = '480';
+  const c = SW.settings.collect(buehne);
+  assertEqual(c.askAfterMinutes, 60);
+  assertEqual(c.hardStopMinutes, 480);
+});
+
+test('Speichern schreibt die Config', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="target-sat"]').value = '90';
+  buehne.querySelector('[name="speichern"]').click();
+  assertEqual(SW.storage.loadConfig().dayTargets.sat, 90);
+});
+
+test('eine Kategorie mit Einträgen wird nicht gelöscht, sondern stillgelegt', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-03', 'verein', '2026-11-03T14:00:00+01:00', '2026-11-03T15:00:00+01:00');
+  SW.settings.render(buehne, cfg());
+  const knopf = buehne.querySelector('[name="cat-verein-delete"]');
+  knopf.click();
+  const c = SW.storage.loadConfig();
+  assertEqual(c.categories.filter(x => x.id === 'verein').length, 1);
+  assertEqual(c.categories.filter(x => x.id === 'verein')[0].active, false);
+  assert(/Historie bleibt erhalten/.test(buehne.textContent), 'Hinweis fehlt');
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 1);
+});
+
+test('eine Kategorie ohne Einträge lässt sich entfernen', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="cat-umbau-delete"]').click();
+  assertEqual(SW.storage.loadConfig().categories.filter(x => x.id === 'umbau').length, 0);
+});
+
+test('eine neue Kategorie lässt sich anlegen', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="cat-neu-name"]').value = 'Sport';
+  buehne.querySelector('[name="cat-neu"]').click();
+  const c = SW.storage.loadConfig();
+  const sport = c.categories.filter(x => x.name === 'Sport')[0];
+  assert(sport, 'Kategorie nicht angelegt');
+  assertEqual(sport.minPeriod, 'day');
+  assertEqual(c.categories.length, 5);
+});
+
+suite('Einstellungen: JSON');
+
+test('applyJsonText lehnt kaputtes JSON ab und ändert nichts', () => {
+  clearSw();
+  SW.storage.saveConfig(cfg());
+  assertEqual(SW.settings.applyJsonText('{kein json').ok, false);
+  assertEqual(SW.settings.applyJsonText('{"categories": "nein"}').ok, false);
+  assertEqual(SW.storage.loadConfig().categories.length, 4);
+});
+
+test('applyJsonText übernimmt gültiges JSON', () => {
+  clearSw();
+  const c = cfg();
+  c.dayTargets.sat = 120;
+  const res = SW.settings.applyJsonText(JSON.stringify(c));
+  assertDeepEqual(res.errors, []);
+  assertEqual(res.ok, true);
+  assertEqual(SW.storage.loadConfig().dayTargets.sat, 120);
+});
+
+test('render zeigt die Fehler eines abgelehnten JSON im Klartext', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="json"]').value = '{"categories": "nein"}';
+  buehne.querySelector('[name="json-uebernehmen"]').click();
+  const fehler = buehne.querySelector('.json-fehler');
+  assert(fehler && fehler.textContent.length > 0, 'Fehlertext fehlt');
+  assert(/categories/.test(fehler.textContent), 'Fehlertext nennt das Feld nicht: ' + fehler.textContent);
+});
+
+suite('Einstellungen: Sicherung');
+
+test('backupFile trägt das Datum im Dateinamen', () => {
+  clearSw();
+  const f = SW.settings.backupFile(new Date('2026-11-03T13:00:00'));
+  assertEqual(f.name, 'schaffwas-backup-2026-11-03.json');
+  const geparst = JSON.parse(f.json);
+  assertEqual(geparst.appVersion, APP_VERSION);
+  assert(geparst.config, 'Config fehlt im Backup');
+});
+
+test('downloadBackup merkt sich den Zeitpunkt', () => {
+  clearSw();
+  assertEqual(SW.storage.lastExportAt(), null);
+  SW.settings.downloadBackup(new Date('2026-11-03T13:00:00'));
+  assert(SW.storage.lastExportAt() !== null, 'Zeitpunkt nicht gemerkt');
+});
+
+test('render zeigt den letzten Export in Tagen', () => {
+  clearSw();
+  const vor12 = new Date(Date.now() - 12 * 86400000);
+  SW.storage.markExported(SW.model.toLocalIso(vor12));
+  SW.settings.render(buehne, cfg());
+  assert(/vor 12 Tagen/.test(buehne.textContent), 'Angabe fehlt: ' + buehne.querySelector('.export-stand').textContent);
+});
+
+test('render zeigt ohne Export einen deutlichen Hinweis', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  assert(/noch nie/.test(buehne.querySelector('.export-stand').textContent), 'Hinweis fehlt');
+});
+
+test('requestPersist kommt ohne Storage-API zurecht', async () => {
+  const echt = navigator.storage;
+  try {
+    Object.defineProperty(navigator, 'storage', { value: undefined, configurable: true });
+    assertEqual(await SW.settings.requestPersist(), 'unbekannt');
+  } finally {
+    Object.defineProperty(navigator, 'storage', { value: echt, configurable: true });
+  }
+});
+
+test('requestPersist meldet einen Status, wenn die API da ist', async () => {
+  const s = await SW.settings.requestPersist();
+  assert(['dauerhaft', 'nicht garantiert', 'unbekannt'].indexOf(s) !== -1, 'Status: ' + s);
+});
+
+test('render zeigt die App-Version', () => {
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  assert(buehne.textContent.indexOf(APP_VERSION) !== -1, 'Version fehlt');
+});
+
+runAll();
+</script>
+</body>
+</html>

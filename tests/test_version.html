@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>version.js – Unit Tests</title>
+</head>
+<body>
+<h1>version.js – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script src="../version.js"></script>
+<script src="_runner.js"></script>
+<script>
+suite('version.js');
+
+test('APP_VERSION ist eine Semver-Zeichenkette', () => {
+  assert(/^\d+\.\d+\.\d+$/.test(APP_VERSION), `APP_VERSION ungültig: ${APP_VERSION}`);
+});
+
+runAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<h2>C, nachgeschärft: 4 Stunden regieren</h2>
+<p class="subtitle">Tagessoll groß, Kategorien nur noch mit Mindest-Halbestunde. Links: Tag noch offen. Rechts: Soll erfüllt.</p>
+
+<style>
+  .ph { width:290px; border-radius:28px; padding:14px; background:#15181d;
+        border:2px solid #2c313a; color:#e8eaed; font-family:system-ui,sans-serif; margin:0 auto;}
+  .ph .bar { font-size:11px; opacity:.5; display:flex; justify-content:space-between; margin-bottom:10px;}
+  .hd { display:flex; align-items:center; gap:8px;} .hd b{font-size:17px;}
+  .tnt { font-size:12px; color:#ffb454; font-style:italic; margin:6px 0 12px; line-height:1.35;}
+  .tnt.ok { color:#7fe0a0; }
+  .hero { background:#1d2127; border:1px solid #2c313a; border-radius:16px; padding:13px; margin-bottom:13px;}
+  .hero.ok { border-color:#38c172;}
+  .hero .num { font-size:34px; font-weight:800; line-height:1;}
+  .hero .num s { font-size:14px; opacity:.45; text-decoration:none; font-weight:600;}
+  .hero .lbl { font-size:11px; opacity:.55; margin:4px 0 10px; text-transform:uppercase; letter-spacing:.6px;}
+  .track { height:14px; border-radius:7px; background:#2c313a; overflow:hidden; display:flex;}
+  .track i { display:block; height:100%;}
+  .legend { font-size:10px; opacity:.5; margin-top:6px; display:flex; justify-content:space-between;}
+  .row { display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:12px;
+         background:#1d2127; border:1px solid #2c313a; margin-bottom:7px;}
+  .row.run { border-color:#f0b429;}
+  .dot { width:9px; height:9px; border-radius:50%; flex:none;}
+  .nm { flex:1; font-size:13px; font-weight:600;}
+  .nm em { display:block; font-size:10px; font-style:normal; opacity:.5; font-weight:500; margin-top:2px;}
+  .tm { font-size:12px; font-variant-numeric:tabular-nums; opacity:.75;}
+  .btn { width:30px; height:30px; border-radius:50%; background:#f0b429; color:#2a1d00; flex:none;
+         display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800;}
+  .btn.st { border-radius:9px; background:#e3342f; color:#fff;}
+  .btn.mi { background:#38c172; color:#08240f;}
+  .warn { font-size:11px; color:#e3342f; margin:2px 0 10px; }
+  .foot { margin-top:11px; padding-top:9px; border-top:1px solid #2c313a;
+          font-size:11px; opacity:.7; display:flex; justify-content:space-between;}
+</style>
+
+<div class="split">
+
+  <div class="mockup">
+    <div class="mockup-header">Vormittag — 1 h 12 von 4 h</div>
+    <div class="mockup-body" style="background:#0f1115; padding:16px 0;">
+      <div class="ph">
+        <div class="bar"><span>9:41</span><span>Di</span></div>
+        <div class="hd"><span style="font-size:22px">🐷</span><b>Schaff was!</b></div>
+        <div class="tnt">„1 von 4 Stunden. Die Couch gewinnt nach Punkten.“</div>
+
+        <div class="hero">
+          <div class="num">1:12 <s>/ 4:00</s></div>
+          <div class="lbl">Tagessoll</div>
+          <div class="track">
+            <i style="width:11%;background:#f0b429"></i>
+            <i style="width:19%;background:#e8a317"></i>
+            <i style="width:0%"></i>
+          </div>
+          <div class="legend"><span>Haushalt 27′ · Bewerbung 45′</span><span>2:48 fehlen</span></div>
+        </div>
+
+        <div class="row run">
+          <span class="dot" style="background:#f0b429"></span>
+          <span class="nm">Haushalt<em>27 / 30 min Minimum</em></span>
+          <span class="tm">27:14</span><span class="btn st">■</span>
+        </div>
+        <div class="row">
+          <span class="dot" style="background:#38c172"></span>
+          <span class="nm">Bewerbungen<em>Minimum erfüllt ✓</em></span>
+          <span class="tm">45′</span><span class="btn">▶</span>
+        </div>
+        <div class="row">
+          <span class="dot" style="background:#7aa2f7"></span>
+          <span class="nm">Verein<em>0 / 30 min Minimum</em></span>
+          <span class="tm">0′</span><span class="btn">▶</span>
+        </div>
+        <div class="row">
+          <span class="dot" style="background:#bb7af7"></span>
+          <span class="nm">Umbau<em>0 / 30 min Minimum</em></span>
+          <span class="tm">0′</span><span class="btn">▶</span>
+        </div>
+
+        <div class="foot"><span>🔥 3 Tage Serie</span><span>Woche 7 h 20</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Abend — Soll erfüllt</div>
+    <div class="mockup-body" style="background:#0f1115; padding:16px 0;">
+      <div class="ph">
+        <div class="bar"><span>19:03</span><span>Di</span></div>
+        <div class="hd"><span style="font-size:22px">🐷</span><b>Schaff was!</b></div>
+        <div class="tnt ok">„4:15 geschafft. Heute warst du keine faule Sau.“</div>
+
+        <div class="hero ok">
+          <div class="num" style="color:#7fe0a0">4:15 <s>/ 4:00</s></div>
+          <div class="lbl">Tagessoll erfüllt ✓</div>
+          <div class="track">
+            <i style="width:25%;background:#f0b429"></i>
+            <i style="width:30%;background:#e8a317"></i>
+            <i style="width:17%;background:#7aa2f7"></i>
+            <i style="width:28%;background:#bb7af7"></i>
+          </div>
+          <div class="legend"><span>alle 4 Kategorien über Minimum</span><span>+15 min</span></div>
+        </div>
+
+        <div class="row">
+          <span class="dot" style="background:#38c172"></span>
+          <span class="nm">Haushalt<em>Minimum erfüllt ✓</em></span>
+          <span class="tm">1:05</span><span class="btn mi">✓</span>
+        </div>
+        <div class="row">
+          <span class="dot" style="background:#38c172"></span>
+          <span class="nm">Bewerbungen<em>Minimum erfüllt ✓</em></span>
+          <span class="tm">1:15</span><span class="btn mi">✓</span>
+        </div>
+        <div class="row">
+          <span class="dot" style="background:#38c172"></span>
+          <span class="nm">Verein<em>Minimum erfüllt ✓</em></span>
+          <span class="tm">0:45</span><span class="btn mi">✓</span>
+        </div>
+        <div class="row">
+          <span class="dot" style="background:#38c172"></span>
+          <span class="nm">Umbau<em>Minimum erfüllt ✓</em></span>
+          <span class="tm">1:10</span><span class="btn mi">✓</span>
+        </div>
+
+        <div class="foot"><span>🔥 4 Tage Serie</span><span>Woche 11 h 35</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px">Unterschied zu vorher: der Balken oben ist <b>ein</b> Balken für den Tag, in Kategorie-Farben gestapelt — jede Kategorie trägt bei, keine ist auf 1 h gedeckelt. Die Kategorie-Zeile zeigt nur noch das Minimum (30 min), nicht ein Stunden-Soll.</p>

@@ -1,0 +1,147 @@
+<h2>Schaff was! — welcher Hauptschirm?</h2>
+<p class="subtitle">Drei Varianten für den Bildschirm, den du morgens aufmachst. Handy-Ansicht. Klick die an, die sich richtig anfühlt.</p>
+
+<style>
+  .phone {
+    width: 300px; margin: 0 auto; border-radius: 28px; padding: 14px;
+    background: #15181d; border: 2px solid #2c313a; color: #e8eaed;
+    font-family: system-ui, sans-serif;
+  }
+  .phone .bar { font-size: 11px; opacity: .5; display:flex; justify-content:space-between; margin-bottom: 10px;}
+  .sau { font-size: 22px; }
+  .head { display:flex; align-items:center; gap:8px; margin-bottom: 4px;}
+  .head b { font-size: 17px; letter-spacing:.3px;}
+  .taunt { font-size: 12px; color:#ffb454; font-style: italic; margin: 6px 0 14px; line-height:1.35;}
+  .tile {
+    border-radius: 16px; padding: 12px; background:#1d2127; border:1px solid #2c313a;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px;}
+  .tname { font-size: 13px; font-weight:600;}
+  .ttime { font-size: 11px; opacity:.6;}
+  .ring { width:52px; height:52px; border-radius:50%; margin:2px auto;
+          display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
+  .r0 { background: conic-gradient(#f0b429 0% 0%, #2c313a 0% 100%);}
+  .r45 { background: conic-gradient(#f0b429 0% 45%, #2c313a 45% 100%);}
+  .r75 { background: conic-gradient(#f0b429 0% 75%, #2c313a 75% 100%);}
+  .r100 { background: conic-gradient(#38c172 0% 100%);}
+  .ring span { width:38px; height:38px; border-radius:50%; background:#1d2127;
+               display:flex; align-items:center; justify-content:center;}
+  .running { border-color:#f0b429; box-shadow: 0 0 0 1px #f0b429 inset;}
+  .bigbtn { width:160px; height:160px; border-radius:50%; margin: 6px auto 12px;
+    background: radial-gradient(circle at 35% 30%, #f7c948, #d9900a);
+    color:#2a1d00; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-weight:800; box-shadow: 0 8px 24px rgba(240,180,20,.25);}
+  .bigbtn .t { font-size: 30px; letter-spacing:1px;}
+  .bigbtn .s { font-size: 12px; font-weight:600; opacity:.8;}
+  .row { display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:12px;
+         background:#1d2127; border:1px solid #2c313a; margin-bottom:7px;}
+  .row .nm { flex:1; font-size:13px; font-weight:600;}
+  .row .tm { font-size:11px; opacity:.6;}
+  .play { width:30px; height:30px; border-radius:50%; background:#f0b429; color:#2a1d00;
+          display:flex;align-items:center;justify-content:center; font-size:13px; font-weight:800;}
+  .stop { width:30px; height:30px; border-radius:8px; background:#e3342f; color:#fff;
+          display:flex;align-items:center;justify-content:center; font-size:11px; font-weight:800;}
+  .done { width:30px; height:30px; border-radius:50%; background:#38c172; color:#08240f;
+          display:flex;align-items:center;justify-content:center; font-size:14px; font-weight:800;}
+  .mini { height:6px; border-radius:3px; background:#2c313a; overflow:hidden;}
+  .mini i { display:block; height:100%; background:#f0b429;}
+  .total { margin-top:12px; padding-top:10px; border-top:1px solid #2c313a; font-size:12px; opacity:.75;
+           display:flex; justify-content:space-between;}
+  .daybar { background:#1d2127; border:1px solid #2c313a; border-radius:14px; padding:11px; margin-bottom:12px;}
+  .daybar .big { font-size:26px; font-weight:800; }
+  .daybar .lbl { font-size:11px; opacity:.6; margin-bottom:8px;}
+  .seg { display:flex; gap:3px; height:12px;}
+  .seg i { flex:1; border-radius:3px; background:#2c313a; position:relative; overflow:hidden;}
+  .seg i b { position:absolute; inset:0 auto 0 0; background:#f0b429; display:block;}
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="kacheln" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px 0; background:#0f1115;">
+      <div class="phone">
+        <div class="bar"><span>9:41</span><span>Di · 4h Soll</span></div>
+        <div class="head"><span class="sau">🐷</span><b>Schaff was!</b></div>
+        <div class="taunt">„Moin, faule Sau. 0 von 4 Stunden. Netflix kann warten.“</div>
+        <div class="grid2">
+          <div class="tile running">
+            <div class="ring r45"><span>27′</span></div>
+            <div class="tname">Haushalt</div>
+            <div class="ttime">läuft · 33 min übrig</div>
+          </div>
+          <div class="tile">
+            <div class="ring r75"><span>45′</span></div>
+            <div class="tname">Bewerbungen</div>
+            <div class="ttime">15 min übrig</div>
+          </div>
+          <div class="tile">
+            <div class="ring r100"><span>✓</span></div>
+            <div class="tname">Verein</div>
+            <div class="ttime">geschafft</div>
+          </div>
+          <div class="tile">
+            <div class="ring r0"><span>0′</span></div>
+            <div class="tname">Umbau</div>
+            <div class="ttime">1 h offen</div>
+          </div>
+        </div>
+        <div class="total"><span>Heute: 1 h 12 / 4 h</span><span>🔥 3 Tage</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Kachel-Raster</h3>
+      <p>Alle Kategorien auf einen Blick, jede mit Fortschrittsring. Antippen startet, nochmal tippen stoppt. Die laufende leuchtet.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="grossbutton" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px 0; background:#0f1115;">
+      <div class="phone">
+        <div class="bar"><span>9:41</span><span>Di · 4h Soll</span></div>
+        <div class="head"><span class="sau">🐷</span><b>Haushalt</b></div>
+        <div class="taunt">„Läuft. Erstaunlich.“</div>
+        <div class="bigbtn">
+          <div class="t">27:14</div>
+          <div class="s">STOPP</div>
+        </div>
+        <div class="mini" style="margin-bottom:12px;"><i style="width:45%"></i></div>
+        <div class="row"><span class="nm">Bewerbungen</span><span class="tm">45/60</span><span class="play">▶</span></div>
+        <div class="row"><span class="nm">Verein</span><span class="tm">✓ 60/60</span><span class="done">✓</span></div>
+        <div class="row"><span class="nm">Umbau</span><span class="tm">0/60</span><span class="play">▶</span></div>
+        <div class="total"><span>Heute: 1 h 12 / 4 h</span><span>🔥 3 Tage</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Dicker Stempel-Knopf</h3>
+      <p>Die laufende Kategorie beherrscht den Schirm: Riesen-Timer, ein Druck = Stopp. Die anderen warten als schmale Zeilen darunter.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="tagesbalken" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px 0; background:#0f1115;">
+      <div class="phone">
+        <div class="bar"><span>9:41</span><span>Di · 4h Soll</span></div>
+        <div class="head"><span class="sau">🐷</span><b>Schaff was!</b></div>
+        <div class="taunt">„1 von 4 Stunden. Der Tag lacht dich aus.“</div>
+        <div class="daybar">
+          <div class="big">1 h 12 <span style="font-size:13px;opacity:.5">/ 4 h</span></div>
+          <div class="lbl">Tagessoll</div>
+          <div class="seg"><i><b style="width:45%"></b></i><i><b style="width:75%"></b></i><i><b style="width:100%;background:#38c172"></b></i><i><b style="width:0%"></b></i></div>
+        </div>
+        <div class="row running" style="border-color:#f0b429"><span class="nm">Haushalt</span><span class="tm">27:14</span><span class="stop">■</span></div>
+        <div class="row"><span class="nm">Bewerbungen</span><span class="tm">45/60</span><span class="play">▶</span></div>
+        <div class="row"><span class="nm">Verein</span><span class="tm">✓ fertig</span><span class="done">✓</span></div>
+        <div class="row"><span class="nm">Umbau</span><span class="tm">0/60</span><span class="play">▶</span></div>
+        <div class="total"><span>🔥 3 Tage Serie</span><span>Woche: 7 h</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Tagessoll oben, Liste unten</h3>
+      <p>Oben die eine Zahl, die zählt: 4 h. Darunter kompakte Zeilen mit Start-Knopf — passt auch bei 6–8 Kategorien noch aufs Display.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:18px">Der Spruch oben wechselt je nach Lage: morgens lahm, mittags frech, abends gnadenlos. Die Sau ist Platzhalter — dein Logo kommt da rein.</p>

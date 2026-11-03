@@ -1,0 +1,10 @@
+{
+  "name": "schaffwas",
+  "private": true,
+  "scripts": {
+    "test": "node run-tests.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}

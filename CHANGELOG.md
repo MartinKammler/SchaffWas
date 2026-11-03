@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.1 — 2026-11-03
+
+Behebt Befunde aus dem Abschluss-Review, wichtigster zuerst:
+
+- **„Nur bis letzte Berührung“ buchte auf dem Handy die volle Zeit.** Der
+  globale `touchstart`-Lauscher setzte `lastSeen` auf jetzt, bevor der Knopf
+  seine Antwort auslöste. Der Trimm-Zeitpunkt wandert jetzt mit der Rückfrage
+  mit.
+- Die laufende Uhr zählt in Tagessumme, Balken, Mindestzeiten und Erfüllung;
+  der Hauptschirm zieht minütlich nach, ohne dass der Spruch springt.
+- Buchen über die Tagesgrenze ist wiederholbar: nach einem Schreibfehler kann
+  ein zweiter Stopp denselben Abschnitt nicht doppelt anlegen.
+- Backup-Import ist atomar, ersetzt wirklich den Bestand und fragt vorher nach.
+- Die harte Obergrenze greift nur noch bei wirklich unbeachteter Uhr.
+- Schreibfehler (voller Speicher) werden angezeigt statt verschluckt.
+- Eine stillgelegte oder gelöschte laufende Kategorie behält ihren Stopp-Knopf.
+- Die Überlappungsprüfung kennt die laufende Uhr.
+- `saveConfig` validiert: ein Tippfehler in den Einstellungen kann die Uhr
+  nicht mehr lahmlegen.
+- Fehlende Mindestzeiten werden beim Namen genannt.
+
 ## 1.0.0 — 2026-11-03
 
 Erste Fassung.

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Tagesprotokoll – Unit Tests</title>
+</head>
+<body>
+<h1>Tagesprotokoll – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+<div id="buehne" style="display:none"></div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../clock.js"></script>
+<script src="../ui.js"></script>
+<script src="../ui-log.js"></script>
+<script src="_runner.js"></script>
+<script>
+const CFG = SW.storage.DEFAULTS;
+const buehne = document.getElementById('buehne');
+
+function clearSw() {
+  Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
+}
+
+function eintrag(id, cat, vonHhmm, minuten, src) {
+  const start = new Date('2026-11-03T' + vonHhmm + ':00');
+  const ende = new Date(start.getTime() + minuten * 60000);
+  return { id: id, cat: cat, start: SW.model.toLocalIso(start), end: SW.model.toLocalIso(ende), src: src || 'timer' };
+}
+
+function tag(liste) {
+  const snap = SW.model.snapshotRules('2026-11-03', CFG);
+  return { target: snap.target, mins: snap.mins, entries: liste };
+}
+
+suite('Protokoll-Modell');
+
+test('model listet Einträge mit Von, Bis und Dauer', () => {
+  const m = SW.log.model('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]), CFG);
+  assertEqual(m.dateKey, '2026-11-03');
+  assertEqual(m.rows.length, 1);
+  assertEqual(m.rows[0].from, '09:05');
+  assertEqual(m.rows[0].to, '09:32');
+  assertEqual(m.rows[0].minutes, 27);
+  assertEqual(m.rows[0].name, 'Haushalt');
+  assertEqual(m.rows[0].color, '#f0b429');
+  assertEqual(m.total, 27);
+});
+
+test('model sortiert die Einträge nach Startzeit', () => {
+  const m = SW.log.model('2026-11-03', tag([eintrag('e2', 'verein', '14:00', 30), eintrag('e1', 'haushalt', '09:00', 30)]), CFG);
+  assertEqual(m.rows[0].id, 'e1');
+  assertEqual(m.rows[1].id, 'e2');
+});
+
+test('model beschriftet die Herkunft', () => {
+  const m = SW.log.model('2026-11-03', tag([
+    eintrag('e1', 'haushalt', '09:00', 30, 'timer'),
+    eintrag('e2', 'haushalt', '10:00', 30, 'manual'),
+    eintrag('e3', 'haushalt', '11:00', 30, 'trimmed'),
+    eintrag('e4', 'haushalt', '12:00', 30, 'autostop')
+  ]), CFG);
+  assertEqual(m.rows[0].srcLabel, '');
+  assertEqual(m.rows[1].srcLabel, 'nachgetragen');
+  assertEqual(m.rows[2].srcLabel, 'gekürzt');
+  assertEqual(m.rows[3].srcLabel, 'automatisch gestoppt');
+});
+
+test('model zeigt gelöschte Kategorien als Unbekannt statt zu scheitern', () => {
+  const m = SW.log.model('2026-11-03', tag([eintrag('e1', 'geloescht', '09:00', 25)]), CFG);
+  assertEqual(m.rows[0].name, 'Unbekannt');
+  assertEqual(m.rows[0].color, '#6b7280');
+  assertEqual(m.total, 25);
+});
+
+test('model kommt mit einem leeren Tag zurecht', () => {
+  const m = SW.log.model('2026-11-03', null, CFG);
+  assertEqual(m.rows.length, 0);
+  assertEqual(m.total, 0);
+});
+
+suite('Protokoll-Darstellung');
+
+test('render zeigt eine Zeile je Eintrag', () => {
+  clearSw();
+  SW.log.render(buehne, SW.log.model('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27), eintrag('e2', 'verein', '14:00', 60)]), CFG));
+  assertEqual(buehne.querySelectorAll('.log-row').length, 2);
+  assert(/09:05/.test(buehne.textContent), 'Startzeit fehlt');
+});
+
+test('render zeigt bei leerem Tag einen Hinweis statt einer leeren Liste', () => {
+  clearSw();
+  SW.log.render(buehne, SW.log.model('2026-11-03', null, CFG));
+  assert(buehne.querySelector('.empty'), 'Hinweis fehlt');
+  assertEqual(buehne.querySelectorAll('.log-row').length, 0);
+});
+
+test('render markiert nachgetragene Einträge sichtbar', () => {
+  clearSw();
+  SW.log.render(buehne, SW.log.model('2026-11-03', tag([eintrag('e1', 'haushalt', '09:00', 30, 'manual')]), CFG));
+  assert(/nachgetragen/.test(buehne.textContent), 'Markierung fehlt');
+});
+
+suite('Protokoll-Editor');
+
+test('openEditor füllt das Formular mit dem Eintrag', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  SW.log.openEditorById('2026-11-03', 'e1');
+  assertEqual(buehne.querySelector('.editor [name=von]').value, '09:05');
+  assertEqual(buehne.querySelector('.editor [name=bis]').value, '09:32');
+  assertEqual(buehne.querySelector('.editor [name=cat]').value, 'haushalt');
+});
+
+test('Speichern einer Korrektur ändert den Eintrag', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  SW.log.openEditorById('2026-11-03', 'e1');
+  buehne.querySelector('.editor [name=bis]').value = '10:05';
+  buehne.querySelector('.editor [name=speichern]').click();
+  assertEqual(SW.model.entryMinutes(SW.storage.loadDay('2026-11-03').entries[0]), 60);
+  assertEqual(buehne.querySelector('.editor'), null);
+});
+
+test('render zeigt die Fehlermeldung einer abgelehnten Überschneidung an', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:00', 60), eintrag('e2', 'verein', '11:00', 60)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  SW.log.openEditorById('2026-11-03', 'e2');
+  buehne.querySelector('.editor [name=von]').value = '09:30';
+  buehne.querySelector('.editor [name=speichern]').click();
+  const fehler = buehne.querySelector('.editor .fehler');
+  assert(fehler && /Überschneidet sich/.test(fehler.textContent), 'Fehlermeldung fehlt: ' + (fehler ? fehler.textContent : 'kein Element'));
+  assertEqual(SW.model.entryMinutes(SW.storage.loadDay('2026-11-03').entries[1]), 60);
+});
+
+test('Nachtragen legt einen neuen Eintrag an', () => {
+  clearSw();
+  SW.log.render(buehne, SW.log.model('2026-11-03', null, CFG));
+  SW.log.openEditor('2026-11-03', null);
+  buehne.querySelector('.editor [name=cat]').value = 'verein';
+  buehne.querySelector('.editor [name=von]').value = '14:00';
+  buehne.querySelector('.editor [name=bis]').value = '15:00';
+  buehne.querySelector('.editor [name=speichern]').click();
+  const es = SW.storage.loadDay('2026-11-03').entries;
+  assertEqual(es.length, 1);
+  assertEqual(es[0].cat, 'verein');
+  assertEqual(es[0].src, 'manual');
+});
+
+test('Löschen entfernt den Eintrag', () => {
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tag([eintrag('e1', 'haushalt', '09:05', 27)]));
+  SW.log.render(buehne, SW.log.model('2026-11-03', SW.storage.loadDay('2026-11-03'), CFG));
+  SW.log.openEditorById('2026-11-03', 'e1');
+  buehne.querySelector('.editor [name=loeschen]').click();
+  assertEqual(SW.storage.loadDay('2026-11-03').entries.length, 0);
+});
+
+runAll();
+</script>
+</body>
+</html>

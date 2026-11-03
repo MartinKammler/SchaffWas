@@ -51,8 +51,11 @@
   document.querySelectorAll('nav button').forEach(b => {
     b.addEventListener('click', () => {
       SW.ui.show(b.dataset.screen);
-      if (b.dataset.screen === 'screen-main') zeichne();
-      else if (typeof SW.screens === 'object' && SW.screens[b.dataset.screen]) SW.screens[b.dataset.screen]();
+      const ziel = b.dataset.screen;
+      if (ziel === 'screen-main') zeichne();
+      else if (ziel === 'screen-log' && SW.log) SW.log.refresh(SW.model.dateKeyOf(jetzt()));
+      else if (ziel === 'screen-history' && SW.history) SW.history.refresh(jetzt());
+      else if (ziel === 'screen-settings' && SW.settings) SW.settings.refresh();
     });
   });
 

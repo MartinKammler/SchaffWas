@@ -170,3 +170,39 @@ input, select {
   background: #11141a; border: 1px solid var(--linie); color: var(--text);
   border-radius: 8px; padding: 8px; font-size: .8rem;
 }
+
+/* ── Protokoll ───────────────────────────────────────────────── */
+
+.log-leiste { display: flex; gap: 8px; margin-bottom: 12px; }
+.log-leiste button {
+  flex: 1; padding: 9px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--linie); background: var(--flaeche); color: var(--text);
+  font-size: .72rem;
+}
+.log-leiste .nachtragen { background: var(--akzent); color: #2a1d00; border-color: var(--akzent); font-weight: 700; }
+
+.log-row {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  padding: 9px 10px; border-radius: 12px; margin-bottom: 7px;
+  background: var(--flaeche); border: 1px solid var(--linie);
+}
+.log-summe { font-size: .72rem; opacity: .6; text-align: right; }
+
+/* ── Editor ──────────────────────────────────────────────────── */
+
+.editor {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 40; width: calc(100% - 40px); max-width: 340px;
+  background: var(--flaeche); border: 1px solid var(--akzent);
+  border-radius: 16px; padding: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+}
+.editor h3 { margin: 0 0 12px; font-size: .95rem; }
+.editor select, .editor input { display: block; width: 100%; margin-bottom: 9px; }
+.editor button {
+  display: block; width: 100%; margin-bottom: 8px; cursor: pointer;
+  padding: 11px; border-radius: 10px; border: 1px solid var(--linie);
+  background: #262b33; color: var(--text); font-size: .8rem;
+}
+.editor .primaer { background: var(--akzent); color: #2a1d00; font-weight: 700; border-color: var(--akzent); }
+.editor .gefahr { background: transparent; color: var(--stopp); border-color: var(--stopp); }

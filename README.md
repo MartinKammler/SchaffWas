@@ -38,6 +38,17 @@ kein Server, keine Synchronisation.
 > JSON-Export in den Einstellungen. Mach ihn gelegentlich — die App sagt dir,
 > wann der letzte her ist.
 
+Drei Dinge, die man wissen sollte:
+
+- **Nur ein Fenster gleichzeitig.** Zwei offene Tabs derselben App können sich
+  gegenseitig Schreibvorgänge überschreiben.
+- **Der Speicher gehört der ganzen Herkunft, nicht dem Pfad.** Unter
+  `martinkammler.github.io` liegen weitere Anwendungen. Das Schlüssel-Präfix
+  `sw_` hält sie auseinander, ist aber kein Schutzwall. Wer echte Trennung
+  will, braucht eine eigene (Sub-)Domain.
+- **Der Export ist unverschlüsselt** und enthält dein vollständiges
+  Zeitprotokoll.
+
 Export und Import liegen unter *Einstellungen → Sicherung*. Dort lässt sich
 die Konfiguration auch direkt als JSON bearbeiten.
 

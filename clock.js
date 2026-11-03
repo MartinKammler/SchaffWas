@@ -132,10 +132,20 @@ SW.clock = (function () {
     const laufzeit = minutenZwischen(start_, now);
     const unbeachtet = minutenZwischen(lastSeen, now);
 
+    // "Ja, ich arbeite noch" startet einen neuen Beobachtungsabschnitt — es
+    // schaltet die Überwachung nicht für immer ab. Sonst läuft eine einmal
+    // bestätigte Uhr durch die Nacht und bucht Tag für Tag volle 24 Stunden.
+    // Bestand aus älteren Versionen kennt nur `asked` ohne Zeitpunkt; dort
+    // gilt die letzte Berührung als Bestätigung.
+    const bestaetigtAm = running.confirmedAt
+      ? new Date(running.confirmedAt)
+      : (running.asked ? lastSeen : start_);
+    const seitBestaetigung = minutenZwischen(bestaetigtAm, now);
+
     // Harte Obergrenze: der Schutz gegen die durchlaufende Nacht — und nur
     // dafür. Wer die App regelmäßig anfasst, arbeitet; dem wird die Uhr nicht
     // unter den Händen weggenommen (Spec §6.4.1, A6).
-    if (laufzeit >= cfg.hardStopMinutes && !running.asked && unbeachtet >= cfg.askAfterMinutes) {
+    if (seitBestaetigung >= cfg.hardStopMinutes && unbeachtet >= cfg.askAfterMinutes) {
       const res = beende(running, lastSeen, 'autostop', cfg);
       if (!res.ok) return { action: 'none', error: res.error };
       S().clearRunning();
@@ -145,7 +155,7 @@ SW.clock = (function () {
     // lastSeen bleibt hier bewusst stehen: 'Nur bis letzte Berührung' braucht
     // genau diesen Zeitpunkt. Erst resolveAsk setzt ihn weiter.
     // Die Erinnerung gilt als erledigt — die Rückfrage fragt dasselbe, schärfer.
-    if (!running.asked && unbeachtet >= cfg.askAfterMinutes) {
+    if (unbeachtet >= cfg.askAfterMinutes) {
       if (!running.reminded) {
         running.reminded = true;
         S().saveRunning(running);
@@ -178,7 +188,10 @@ SW.clock = (function () {
     const cfg = S().loadConfig();
 
     if (choice === 'full') {
+      // Zeitpunkt merken: ab hier läuft ein neuer Abschnitt, nach dem wieder
+      // gefragt wird und ab dem die harte Obergrenze zählt.
       running.asked = true;
+      running.confirmedAt = M().toLocalIso(now);
       running.lastSeen = M().toLocalIso(now);
       return S().saveRunning(running);
     }

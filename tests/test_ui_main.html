@@ -349,6 +349,16 @@ test('ask bietet genau drei Knöpfe und meldet die Wahl zurück', () => {
   assertEqual(document.querySelector('.ask'), null);
 });
 
+test('die Knöpfe sagen, was sie tun', () => {
+  // U1: "Ja, voll buchen" bucht nichts — die Uhr läuft weiter.
+  SW.ui.ask({ cat: 'Haushalt', minutes: 130, lastSeen: '2026-11-03T09:32:00+01:00' }, () => {});
+  const knoepfe = document.querySelectorAll('.ask button');
+  assert(/weiterlaufen/i.test(knoepfe[0].textContent), 'Knopf 1: ' + knoepfe[0].textContent);
+  assert(!/buchen/i.test(knoepfe[0].textContent), 'Knopf 1 verspricht fälschlich eine Buchung');
+  assert(/stopp/i.test(knoepfe[1].textContent), 'Knopf 2 sagt nicht, dass gestoppt wird: ' + knoepfe[1].textContent);
+  SW.ui.clearAsk();
+});
+
 runAll();
 </script>
 </body>

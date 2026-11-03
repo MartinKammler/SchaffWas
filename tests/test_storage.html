@@ -276,6 +276,24 @@ test('validateBackup prüft auch Zeitstempel und Tagesvorgaben', () => {
   assertEqual(SW.storage.validateBackup(c).ok, false);
 });
 
+test('importAll meldet es, wenn auch die Ruecksicherung scheitert', () => {
+  // S3: Ein stumm gescheiterter Rollback ist der schlimmste Fall ueberhaupt.
+  clearSw();
+  SW.storage.saveDay('2026-11-03', tagRec());
+  const fremd = SW.storage.exportAll();
+  fremd.logs['2026-12'] = { '2026-12-01': tagRec() };
+
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { const e = new Error('voll'); e.name = 'QuotaExceededError'; throw e; };
+  let res;
+  try { res = SW.storage.importAll(fremd); }
+  finally { Storage.prototype.setItem = echt; }
+
+  assertEqual(res.ok, false);
+  assert(res.errors.join(' ').indexOf('nicht vollst') !== -1,
+    'Rollback-Fehler nicht gemeldet: ' + res.errors.join(' '));
+});
+
 runAll();
 </script>
 </body>

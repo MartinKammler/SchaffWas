@@ -81,13 +81,14 @@ SW.settings = (function () {
       if (hatEintraege(c.id)) {
         const kat = config.categories.filter(x => x.id === c.id)[0];
         if (kat) kat.active = false;
-        SW.storage.saveConfig(config);
-        render(wurzel(), SW.storage.loadConfig(), 'Kategorie stillgelegt — Historie bleibt erhalten.');
+        const res = SW.storage.saveConfig(config);
+        render(wurzel(), SW.storage.loadConfig(),
+          res.ok ? 'Kategorie stillgelegt — Historie bleibt erhalten.' : res.error);
         return;
       }
       config.categories = config.categories.filter(x => x.id !== c.id);
-      SW.storage.saveConfig(config);
-      render(wurzel(), SW.storage.loadConfig(), 'Kategorie entfernt.');
+      const res = SW.storage.saveConfig(config);
+      render(wurzel(), SW.storage.loadConfig(), res.ok ? 'Kategorie entfernt.' : res.error);
     });
     fuss.appendChild(weg);
     box.appendChild(fuss);
@@ -134,8 +135,8 @@ SW.settings = (function () {
         color: FARBEN[aktuell.categories.length % FARBEN.length],
         minMinutes: 30, minPeriod: 'day', active: true
       });
-      SW.storage.saveConfig(aktuell);
-      render(root, SW.storage.loadConfig(), 'Kategorie angelegt.');
+      const res = SW.storage.saveConfig(aktuell);
+      render(root, SW.storage.loadConfig(), res.ok ? 'Kategorie angelegt.' : res.error);
     });
     neu.appendChild(neuKnopf);
     root.appendChild(neu);

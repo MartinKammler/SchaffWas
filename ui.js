@@ -90,10 +90,12 @@ SW.ui = (function () {
     frage.textContent = `${model.cat} läuft seit ${fmt(model.minutes)} — echt?`;
     box.appendChild(frage);
 
+    // Die Beschriftungen sagen, was passiert: der erste Knopf bucht nichts,
+    // er lässt die Uhr laufen.
     const optionen = [
-      { choice: 'full', label: 'Ja, voll buchen' },
-      { choice: 'trim', label: `Nur bis ${fmtTime(model.lastSeen)} (letzte Berührung)` },
-      { choice: 'edit', label: 'Zeit selbst eintragen' }
+      { choice: 'full', label: 'Ja, ich arbeite noch — weiterlaufen lassen' },
+      { choice: 'trim', label: `Bis ${fmtTime(model.lastSeen)} eintragen und stoppen` },
+      { choice: 'edit', label: 'Zeit selbst korrigieren' }
     ];
     optionen.forEach(o => {
       const b = document.createElement('button');

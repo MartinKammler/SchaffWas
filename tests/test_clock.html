@@ -180,12 +180,57 @@ test('checkOnVisible fragt nicht, solange die App berührt wird', () => {
   assert(SW.clock.checkOnVisible(t('11:30')).action !== 'ask', 'Rückfrage trotz Berührung');
 });
 
-test('checkOnVisible fragt pro Eintrag nur einmal', () => {
+test('nach dem Bestaetigen ist erst einmal Ruhe', () => {
   clearSw();
   SW.clock.start('haushalt', t('09:00'));
   SW.clock.checkOnVisible(t('10:35'));
   SW.clock.resolveAsk('full', t('10:36'));
-  assertEqual(SW.clock.checkOnVisible(t('14:00')).action, 'none');
+  assertEqual(SW.clock.checkOnVisible(t('11:00')).action, 'none');
+});
+
+test('eine bestaetigte Uhr wird nach erneuter langer Stille wieder gefragt', () => {
+  // F1: Die Bestaetigung startet einen neuen Beobachtungsabschnitt, sie
+  // schaltet die Pruefung nicht fuer immer ab.
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('10:35'));
+  SW.clock.resolveAsk('full', t('10:36'));
+  const r = SW.clock.checkOnVisible(t('14:00'));
+  assertEqual(r.action, 'ask');
+  assertEqual(new Date(r.lastSeen).getTime(), t('10:36').getTime());
+});
+
+test('eine bestaetigte Uhr laeuft nicht ewig weiter', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('10:35'));
+  SW.clock.resolveAsk('full', t('10:36'));
+  // Ab der Bestaetigung zehn Stunden ohne jede Beruehrung.
+  const r = SW.clock.checkOnVisible(t('21:00'));
+  assertEqual(r.action, 'hardstop');
+  assertEqual(SW.storage.loadRunning(), null);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 96); // 09:00-10:36
+});
+
+test('die harte Obergrenze misst ab der letzten Bestaetigung', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('10:35'));
+  SW.clock.resolveAsk('full', t('10:36'));
+  // Neun Stunden nach der Bestaetigung: noch keine harte Obergrenze.
+  assertEqual(SW.clock.checkOnVisible(t('19:30')).action, 'ask');
+});
+
+test('ein alter laufender Eintrag mit asked-Flag wird trotzdem ueberwacht', () => {
+  // Bestand aus Version 1.2.0: asked true, kein confirmedAt.
+  clearSw();
+  SW.storage.saveRunning({
+    cat: 'haushalt',
+    start: SW.model.toLocalIso(t('09:00')),
+    lastSeen: SW.model.toLocalIso(t('09:30')),
+    reminded: true, asked: true
+  });
+  assertEqual(SW.clock.checkOnVisible(t('12:00')).action, 'ask');
 });
 
 test('checkOnVisible meldet hardstop ab hardStopMinutes', () => {

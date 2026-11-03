@@ -58,6 +58,14 @@ Tag durch, und die 4 Stunden stehen abends da. Mehr nicht.
 ## 3. Nicht-Ziele (bewusst draußen, v1)
 
 - **Keine Aufgaben-/To-do-Listen.** Kategorien, keine Einzelaufgaben.
+- **Keine Absicherung gegen mehrere offene Tabs.** `localStorage` kennt keine
+  tabübergreifenden Transaktionen; zwei gleichzeitig offene Fenster können sich
+  Schreibvorgänge überschreiben. Für eine Ein-Personen-App auf einem Handy
+  hingenommen und hier dokumentiert.
+- **Keine Isolation gegenüber anderen Apps derselben Herkunft.** Unter
+  `martinkammler.github.io` liegen weitere Anwendungen; `localStorage` trennt
+  nach Herkunft, nicht nach Pfad. Das Präfix `sw_` ist ein Namensraum, keine
+  Sicherheitsgrenze. Wer echte Trennung will, braucht eine eigene (Sub-)Domain.
 - **Keine WebDAV-Synchronisation in v1.** Später denkbar (siehe §10), die
   Datenstruktur wird darauf vorbereitet, aber nichts davon wird jetzt gebaut.
 - **Kein Backend, kein Konto, kein Login, kein PIN.** Eine Person, ein Gerät.
@@ -199,9 +207,17 @@ die gemessen werden soll (A6). Deshalb gilt:
 - Überschreitet ein laufender Eintrag `askAfterMinutes` (Standard 90), zeigt die
   App **beim nächsten Sichtbarwerden** genau eine Rückfrage:
   > "Haushalt läuft seit 2:10 — echt?"
-  > **[Ja, voll buchen] [Nur bis 09:32 (letzte Berührung)] [Zeit selbst eintragen]**
-- "Voll buchen" beendet nichts — die Uhr läuft weiter, die Frage ist für diesen
-  Eintrag beantwortet (`asked: true`) und kommt nicht wieder.
+  > **[Ja, ich arbeite noch — weiterlaufen lassen] [Bis 09:32 eintragen und stoppen] [Zeit selbst korrigieren]**
+- Die Beschriftungen sagen, was passiert. Der erste Knopf bucht **nichts** — er
+  lässt die Uhr laufen. *(Korrigiert: "Ja, voll buchen" versprach eine Buchung,
+  die nicht stattfindet.)*
+- "Weiterlaufen lassen" beendet nichts und **startet einen neuen
+  Beobachtungsabschnitt**: Zeitpunkt in `confirmedAt`, und von dort an gelten
+  Rückfrage und harte Obergrenze von Neuem.
+  *(Korrigiert: Die erste Fassung schaltete mit `asked: true` beide
+  Schutzmechanismen dauerhaft ab. Eine einmal bestätigte Uhr lief dann durch
+  die Nacht und buchte über die Tagesgrenze hinweg volle 24-Stunden-Tage —
+  genau das, was §6.4 verhindern soll.)*
 - "Nur bis letzte Berührung" stoppt den Eintrag zum Zeitpunkt `lastSeen` und
   markiert ihn `src: "trimmed"`.
 - "Selbst eintragen" stoppt den Eintrag und öffnet ihn direkt im Editor.
@@ -212,9 +228,12 @@ die gemessen werden soll (A6). Deshalb gilt:
 - `lastSeen` wird bei jeder Interaktion und bei jedem `visibilitychange` auf
   sichtbar aktualisiert.
 - **Harte Obergrenze:** Läuft ein Eintrag über `hardStopMinutes` (Standard 600 =
-  10 h) **und** ist die Rückfrage unbeantwortet, wird er bei `lastSeen` beendet
-  und `src: "autostop"` markiert. Das ist der Schutz gegen die durchlaufende
-  Nacht, nicht der Normalweg.
+  10 h) **seit dem Start oder seit der letzten Bestätigung** und ist er
+  zugleich länger als `askAfterMinutes` unbeachtet, wird er bei `lastSeen`
+  beendet und `src: "autostop"` markiert. Das ist der Schutz gegen die
+  durchlaufende Nacht, nicht der Normalweg.
+- Die Erinnerung (6.4.2) bleibt einmalig pro Eintrag und wird vom Bestätigen
+  nicht zurückgesetzt — die Rückfrage ist der eigentliche Mechanismus.
 
 #### 6.4.2 Erinnerung — nur im Vordergrund
 
@@ -335,10 +354,15 @@ genau das, was A4 verhindern soll. *(Meine Entscheidung.)*
   "cat": "haushalt",
   "start": "2026-11-03T09:05:11+01:00",
   "lastSeen": "2026-11-03T09:30:02+01:00",
+  "confirmedAt": null,
   "reminded": false,
   "asked": false
 }
 ```
+
+`confirmedAt` ist der Zeitpunkt der letzten Bestätigung "weiterlaufen lassen"
+und der Bezugspunkt der harten Obergrenze. Bestand ohne dieses Feld, aber mit
+`asked: true`, wird so behandelt, als sei `lastSeen` die Bestätigung.
 
 `lastSeen` wird bei jeder Interaktion und bei jedem Sichtbarwerden der Seite
 aktualisiert (Reihenfolge: siehe 6.4.1). `asked` merkt, dass die Rückfrage für

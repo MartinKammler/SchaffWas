@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.3.0 — 2026-11-03
+
+Behebt Befunde aus einem externen technischen Review.
+
+- **Eine bestätigte Uhr lief unbegrenzt weiter.** Wer einmal „Ja, voll buchen"
+  getippt hatte, wurde für diesen Eintrag **nie wieder** gefragt — und auch die
+  harte Obergrenze griff nicht mehr. Mittags bestätigt und abends vergessen
+  hieß: Die Uhr lief durch die Nacht und buchte Tag für Tag volle
+  24 Stunden. Die Bestätigung startet jetzt einen neuen Beobachtungsabschnitt,
+  statt die Überwachung abzuschalten.
+- **Die Knöpfe der Rückfrage sagen jetzt, was sie tun.** „Ja, voll buchen"
+  buchte nichts — es ließ die Uhr laufen. Neu: „Ja, ich arbeite noch —
+  weiterlaufen lassen", „Bis 09:32 eintragen und stoppen", „Zeit selbst
+  korrigieren".
+- **Kategorie anlegen, entfernen und stilllegen** meldeten Erfolg, auch wenn
+  das Speichern fehlgeschlagen war. Jetzt wird der Fehler angezeigt.
+- **Ein gescheiterter Rollback beim Import** blieb stumm. Jetzt sagt die App
+  deutlich, dass der vorherige Stand nicht vollständig wiederhergestellt werden
+  konnte.
+- Dokumentiert: mehrere offene Tabs können sich gegenseitig überschreiben, und
+  `localStorage` trennt nach Herkunft, nicht nach Pfad — unter
+  `martinkammler.github.io` liegen weitere Apps.
+
 ## 1.2.0 — 2026-11-03
 
 - **Die laufende Uhr rollt jenseits einer Stunde auf Stunden um:** `2:05:30`

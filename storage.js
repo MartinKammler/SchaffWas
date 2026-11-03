@@ -287,7 +287,10 @@ SW.storage = (function () {
     }
 
     if (errors.length > 0) {
-      sicherungZurueck(sicherung);
+      if (!sicherungZurueck(sicherung)) {
+        errors.push('Achtung: Der vorherige Stand konnte nicht vollständig wiederhergestellt werden. '
+          + 'Schaff dir Platz und spiel ein Backup ein, bevor du weiterstempelst.');
+      }
       return { ok: false, errors: errors };
     }
 
@@ -314,13 +317,23 @@ SW.storage = (function () {
     return stand;
   }
 
+  // Gibt zurück, ob der alte Zustand wirklich wiederhergestellt wurde. Ein
+  // stumm gescheiterter Rollback ist der schlimmste Fall überhaupt: dann ist
+  // weder das Alte noch das Neue vollständig da, und niemand weiß davon.
   function sicherungZurueck(stand) {
+    let ok = true;
     try {
-      eigeneSchluessel().forEach(k => { if (!(k in stand)) localStorage.removeItem(k); });
-      Object.keys(stand).forEach(k => {
-        if (stand[k] !== null) localStorage.setItem(k, stand[k]);
+      eigeneSchluessel().forEach(k => {
+        if (!(k in stand)) {
+          try { localStorage.removeItem(k); } catch (e) { ok = false; }
+        }
       });
-    } catch (e) { /* mehr als der Versuch ist nicht möglich */ }
+    } catch (e) { ok = false; }
+    Object.keys(stand).forEach(k => {
+      if (stand[k] === null) return;
+      try { localStorage.setItem(k, stand[k]); } catch (e) { ok = false; }
+    });
+    return ok;
   }
 
   return {

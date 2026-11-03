@@ -262,6 +262,34 @@ test('downloadBackup meldet, ob die Sicherung zustande kam', () => {
   assertEqual(res.name, 'schaffwas-backup-2026-11-03.json');
 });
 
+test('ein Schreibfehler beim Anlegen einer Kategorie wird gemeldet', () => {
+  // U3: Die Oberflaeche darf Erfolg nicht vortaeuschen.
+  clearSw();
+  SW.settings.render(buehne, cfg());
+  buehne.querySelector('[name="cat-neu-name"]').value = 'Sport';
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { const e = new Error('voll'); e.name = 'QuotaExceededError'; throw e; };
+  try { buehne.querySelector('[name="cat-neu"]').click(); }
+  finally { Storage.prototype.setItem = echt; }
+  const hinweis = buehne.querySelector('.set-hinweis');
+  assert(hinweis && /voll oder gesperrt/.test(hinweis.textContent),
+    'Fehler nicht angezeigt: ' + (hinweis ? hinweis.textContent : 'kein Hinweis'));
+  assertEqual(SW.storage.loadConfig().categories.filter(c => c.name === 'Sport').length, 0);
+});
+
+test('ein Schreibfehler beim Stilllegen einer Kategorie wird gemeldet', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-03', 'verein', '2026-11-03T14:00:00+01:00', '2026-11-03T15:00:00+01:00');
+  SW.settings.render(buehne, cfg());
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { throw new Error('voll'); };
+  try { buehne.querySelector('[name="cat-verein-delete"]').click(); }
+  finally { Storage.prototype.setItem = echt; }
+  const hinweis2 = buehne.querySelector('.set-hinweis');
+  assert(hinweis2 && /voll oder gesperrt/.test(hinweis2.textContent),
+    'Fehler nicht angezeigt: ' + (hinweis2 ? hinweis2.textContent : 'kein Hinweis'));
+});
+
 runAll();
 </script>
 </body>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>taunts.js – Unit Tests</title>
+</head>
+<body>
+<h1>taunts.js – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../taunts.js"></script>
+<script src="_runner.js"></script>
+<script>
+const ZUSTAENDE = ['tag_frisch', 'kaum_was', 'unterwegs', 'kurz_davor', 'soll_erfuellt',
+  'minimum_fehlt', 'woche_hinkt', 'spaet_und_wenig', 'freier_tag', 'serie_gebrochen'];
+
+function tagStatus(total, opts) {
+  return Object.assign({
+    total: total, target: 240, free: false, missing: [], byCat: {},
+    fulfilled: total >= 240
+  }, opts || {});
+}
+
+function wochenStatus(opts) {
+  return Object.assign({ byCat: { verein: { have: 120, need: 120 }, umbau: { have: 120, need: 120 } }, total: 0, fulfilled: true }, opts || {});
+}
+
+// 2026-11-03 = Dienstag, 2026-11-05 = Donnerstag
+function zeit(datum, hhmm) { return new Date(datum + 'T' + hhmm + ':00'); }
+
+suite('taunts: Pools');
+
+test('jeder Zustand hat 8 bis 12 Sprüche', () => {
+  ZUSTAENDE.forEach(z => {
+    const p = SW.taunts.POOLS[z];
+    assert(Array.isArray(p), `Pool ${z} fehlt`);
+    assert(p.length >= 8 && p.length <= 12, `Pool ${z} hat ${p ? p.length : 0} Sprüche`);
+  });
+});
+
+test('die Pools enthalten keine anderen Zustände', () => {
+  assertDeepEqual(Object.keys(SW.taunts.POOLS).sort(), ZUSTAENDE.slice().sort());
+});
+
+test('kein Spruch nennt Geld, Amt oder Arbeitslosigkeit', () => {
+  const verboten = /hartz|jobcenter|\bamt\b|arbeitslos|bürgergeld|stütze|sozialhilfe|arbeitsamt/i;
+  ZUSTAENDE.forEach(z => {
+    SW.taunts.POOLS[z].forEach(s => {
+      assert(!verboten.test(s), `Verbotenes Thema in ${z}: "${s}"`);
+    });
+  });
+});
+
+test('kein Spruch ist leer oder überlang', () => {
+  ZUSTAENDE.forEach(z => {
+    SW.taunts.POOLS[z].forEach(s => {
+      assert(typeof s === 'string' && s.length > 3, `Leerer Spruch in ${z}`);
+      assert(s.length <= 120, `Zu lang in ${z}: "${s}"`);
+    });
+  });
+});
+
+suite('taunts: Zustandswahl');
+
+test('stateFor meldet freier_tag vor allem anderen', () => {
+  const s = SW.taunts.stateFor({ dayStatus: tagStatus(0, { free: true, target: 0 }), weekStatus: wochenStatus(), streakBroken: true, now: zeit('2026-11-08', '20:00') });
+  assertEqual(s, 'freier_tag');
+});
+
+test('stateFor meldet serie_gebrochen vor dem Fortschritt', () => {
+  const s = SW.taunts.stateFor({ dayStatus: tagStatus(30), weekStatus: wochenStatus(), streakBroken: true, now: zeit('2026-11-03', '09:00') });
+  assertEqual(s, 'serie_gebrochen');
+});
+
+test('stateFor erkennt den erfüllten Tag', () => {
+  const s = SW.taunts.stateFor({ dayStatus: tagStatus(255), weekStatus: wochenStatus(), streakBroken: false, now: zeit('2026-11-03', '19:00') });
+  assertEqual(s, 'soll_erfuellt');
+});
+
+test('stateFor meldet minimum_fehlt, wenn das Soll steht aber ein Tagesminimum fehlt', () => {
+  const s = SW.taunts.stateFor({
+    dayStatus: tagStatus(260, { fulfilled: false, missing: [{ cat: 'bewerbung', have: 10, need: 30 }] }),
+    weekStatus: wochenStatus(), streakBroken: false, now: zeit('2026-11-03', '17:00')
+  });
+  assertEqual(s, 'minimum_fehlt');
+});
+
+test('stateFor meldet spaet_und_wenig erst ab 18 Uhr', () => {
+  const basis = { dayStatus: tagStatus(96), weekStatus: wochenStatus(), streakBroken: false };
+  assertEqual(SW.taunts.stateFor(Object.assign({}, basis, { now: zeit('2026-11-03', '17:00') })), 'unterwegs');
+  assertEqual(SW.taunts.stateFor(Object.assign({}, basis, { now: zeit('2026-11-03', '18:30') })), 'spaet_und_wenig');
+});
+
+test('stateFor meldet woche_hinkt ab Donnerstag', () => {
+  const week = wochenStatus({ byCat: { verein: { have: 30, need: 120 } } });
+  assertEqual(SW.taunts.stateFor({ dayStatus: tagStatus(96), weekStatus: week, streakBroken: false, now: zeit('2026-11-03', '10:00') }), 'unterwegs');
+  assertEqual(SW.taunts.stateFor({ dayStatus: tagStatus(96), weekStatus: week, streakBroken: false, now: zeit('2026-11-05', '10:00') }), 'woche_hinkt');
+});
+
+test('stateFor staffelt den Fortschritt', () => {
+  const basis = { weekStatus: wochenStatus(), streakBroken: false, now: zeit('2026-11-03', '11:00') };
+  assertEqual(SW.taunts.stateFor(Object.assign({}, basis, { dayStatus: tagStatus(0) })), 'tag_frisch');
+  assertEqual(SW.taunts.stateFor(Object.assign({}, basis, { dayStatus: tagStatus(20) })), 'kaum_was');
+  assertEqual(SW.taunts.stateFor(Object.assign({}, basis, { dayStatus: tagStatus(120) })), 'unterwegs');
+  assertEqual(SW.taunts.stateFor(Object.assign({}, basis, { dayStatus: tagStatus(200) })), 'kurz_davor');
+});
+
+suite('taunts: Auswahl');
+
+test('pick liefert einen Spruch aus dem Pool', () => {
+  const s = SW.taunts.pick('tag_frisch', SW.storage.DEFAULTS);
+  assert(SW.taunts.POOLS.tag_frisch.indexOf(s) !== -1, 'Spruch nicht aus dem Pool: ' + s);
+});
+
+test('pick bevorzugt eigene Sprüche aus der Config', () => {
+  const cfg = { taunts: { tag_frisch: ['Eigener Spruch'] } };
+  assertEqual(SW.taunts.pick('tag_frisch', cfg), 'Eigener Spruch');
+});
+
+test('pick fällt bei unbekanntem Zustand auf tag_frisch zurück', () => {
+  const s = SW.taunts.pick('gibtsnicht', SW.storage.DEFAULTS);
+  assert(typeof s === 'string' && s.length > 0, 'kein Spruch geliefert');
+});
+
+test('pick wiederholt nicht unmittelbar denselben Spruch', () => {
+  let vorher = null;
+  for (let i = 0; i < 30; i++) {
+    const s = SW.taunts.pick('kaum_was', SW.storage.DEFAULTS);
+    assert(s !== vorher, 'Spruch zweimal hintereinander: ' + s);
+    vorher = s;
+  }
+});
+
+runAll();
+</script>
+</body>
+</html>

@@ -199,10 +199,15 @@ test('der Einstellungs-Kopf traegt den Schriftzug', () => {
   assertEqual(bild.getAttribute('alt'), 'Schaff was!');
 });
 
-test('render zeigt die App-Version', () => {
+test('render zeigt Name und Version direkt unter dem Schriftzug', () => {
   clearSw();
   SW.settings.render(buehne, cfg());
-  assert(buehne.textContent.indexOf(APP_VERSION) !== -1, 'Version fehlt');
+  const bild = buehne.querySelector('.set-schriftzug');
+  const zeile = bild.nextElementSibling;
+  assert(zeile && zeile.classList.contains('set-version'),
+    'unter dem Bild steht nicht die Version, sondern: ' + (zeile ? zeile.className : 'nichts'));
+  assertEqual(zeile.textContent, 'Schaff was! · Version ' + APP_VERSION);
+  assertEqual(buehne.querySelectorAll('.set-version').length, 1);
 });
 
 suite('Einstellungen: Befunde aus dem Review');

@@ -56,6 +56,11 @@ h2 { font-size: 1.05rem; margin: 2px 0 12px; }
   font-size: .8rem; letter-spacing: .3px; color: var(--akzent);
   animation: splash-text-rein .45s .12s ease-out both;
 }
+#splash-version {
+  margin: 6px 0 0; text-align: center;
+  font-size: .68rem; opacity: .4;
+  animation: splash-text-rein .45s .18s ease-out both;
+}
 
 @keyframes splash-sau-rein {
   from { opacity: 0; transform: scale(.9); }
@@ -75,7 +80,7 @@ h2 { font-size: 1.05rem; margin: 2px 0 12px; }
    Grund braucht er keine zusätzliche Fläche. */
 .set-schriftzug {
   display: block; width: min(62%, 220px); height: auto;
-  margin: 0 auto 18px;
+  margin: 0 auto 6px;
 }
 
 /* ── Kopf mit Sau und Spruch ─────────────────────────────────── */
@@ -342,7 +347,7 @@ h3 { font-size: .78rem; opacity: .6; margin: 20px 0 8px; font-weight: 600; }
 .einheit { opacity: .5; font-size: .7rem; }
 
 .set-fussnote { font-size: .68rem; opacity: .5; line-height: 1.4; margin: 8px 0 0; }
-.set-version { font-size: .68rem; opacity: .4; margin-top: 22px; text-align: center; }
+.set-version { font-size: .7rem; opacity: .5; margin: 0 0 18px; text-align: center; }
 
 .export-stand { font-size: .74rem; opacity: .75; margin: 0 0 10px; }
 .json-fehler { color: var(--stopp); font-size: .72rem; margin: 6px 0; }

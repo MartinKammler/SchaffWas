@@ -214,6 +214,13 @@
   const SPLASH_MS = 1400;
   let splashTimer = null;
 
+  // Die Version steht beim Laden im Startbild — so sieht man nach einem
+  // Update auf einen Blick, was gerade laeuft.
+  (function versionEintragen() {
+    const feld = document.getElementById('splash-version');
+    if (feld && typeof APP_VERSION === 'string') feld.textContent = 'Version ' + APP_VERSION;
+  })();
+
   function versteckeStartbild() {
     const splash = document.getElementById('splash');
     if (!splash || splash.classList.contains('weg')) return;

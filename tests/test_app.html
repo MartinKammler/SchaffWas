@@ -15,6 +15,7 @@
   <div id="splash">
     <img id="splash-sau" src="../Logo.png" alt="Schaff was!">
     <p id="splash-zeile">Stempeluhr gegen den inneren Schweinehund</p>
+    <p id="splash-version"></p>
   </div>
   <main>
     <section id="screen-main" class="screen active"></section>
@@ -229,6 +230,11 @@ test('ein Tipp schickt das Startbild sofort weg', () => {
   assert(!splash.classList.contains('weg'), 'Startbild wurde nicht gezeigt');
   tippe(splash);
   assert(splash.classList.contains('weg'), 'Tipp hat nichts bewirkt');
+});
+
+test('das Startbild nennt die Version', () => {
+  // Steht schon beim Laden fest, nicht erst beim Anzeigen.
+  assertEqual(document.getElementById('splash-version').textContent, 'Version ' + APP_VERSION);
 });
 
 runAll();

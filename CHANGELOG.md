@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0 — 2026-11-03
+
+- **Die Versionsnummer steht jetzt da, wo man sie sucht:** klein unter dem
+  Sticker auf dem Startbild und in den Einstellungen direkt unter dem
+  Schriftzug, zusammen mit dem Namen. Die alte Zeile ganz unten in den
+  Einstellungen entfällt.
+
 ## 1.4.1 — 2026-11-03
 
 Der angekündigte Kleinkram.

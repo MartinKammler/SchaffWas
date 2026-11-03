@@ -105,6 +105,8 @@ SW.settings = (function () {
     schriftzug.src = './Logo-Schriftzug.png';
     schriftzug.alt = 'Schaff was!';
     root.appendChild(schriftzug);
+    root.appendChild(el('p', 'set-version',
+      'Schaff was! · Version ' + (typeof APP_VERSION === 'string' ? APP_VERSION : '?')));
 
     root.appendChild(el('h2', null, 'Einstellungen'));
     if (hinweis) root.appendChild(el('p', 'set-hinweis', hinweis));
@@ -247,7 +249,6 @@ SW.settings = (function () {
     });
     root.appendChild(jsonKnopf);
 
-    root.appendChild(el('p', 'set-version', 'Schaff was! Version ' + (typeof APP_VERSION === 'string' ? APP_VERSION : '?')));
   }
 
   function collect(root) {

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>clock.js – Unit Tests</title>
+</head>
+<body>
+<h1>clock.js – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../clock.js"></script>
+<script src="_runner.js"></script>
+<script>
+function clearSw() {
+  Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
+}
+
+// 2026-11-03 ist ein Dienstag (Soll 240).
+function t(hhmm, tag) {
+  const d = tag || '2026-11-03';
+  return new Date(d + 'T' + hhmm + ':00');
+}
+
+function eintraege(dateStr) {
+  const rec = SW.storage.loadDay(dateStr);
+  return rec ? rec.entries : [];
+}
+
+suite('clock: Stempeln');
+
+test('start schreibt den laufenden Eintrag', () => {
+  clearSw();
+  assertEqual(SW.clock.start('haushalt', t('09:00')).ok, true);
+  const r = SW.storage.loadRunning();
+  assertEqual(r.cat, 'haushalt');
+  assertEqual(r.reminded, false);
+  assertEqual(r.asked, false);
+  assertEqual(SW.model.dateKeyOf(r.start), '2026-11-03');
+});
+
+test('start auf eine andere Kategorie stoppt die laufende und bucht sie', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.start('bewerbung', t('09:30'));
+  const es = eintraege('2026-11-03');
+  assertEqual(es.length, 1);
+  assertEqual(es[0].cat, 'haushalt');
+  assertEqual(SW.model.entryMinutes(es[0]), 30);
+  assertEqual(SW.storage.loadRunning().cat, 'bewerbung');
+});
+
+test('stop beendet und bucht den laufenden Eintrag', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const res = SW.clock.stop(t('10:00'));
+  assertEqual(res.ok, true);
+  assertEqual(SW.storage.loadRunning(), null);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 60);
+  assertEqual(eintraege('2026-11-03')[0].src, 'timer');
+});
+
+test('stop ohne laufende Uhr ist unschädlich', () => {
+  clearSw();
+  assertEqual(SW.clock.stop(t('10:00')).ok, true);
+  assertEqual(eintraege('2026-11-03').length, 0);
+});
+
+test('stop legt beim ersten Eintrag des Tages den Regel-Abzug an', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.stop(t('09:30'));
+  const rec = SW.storage.loadDay('2026-11-03');
+  assertEqual(rec.target, 240);
+  assertDeepEqual(rec.mins.verein, [120, 'week']);
+  assertDeepEqual(rec.mins.haushalt, [30, 'day']);
+});
+
+test('stop lässt einen bestehenden Regel-Abzug unverändert', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.stop(t('09:30'));
+  const cfg = SW.storage.loadConfig();
+  cfg.dayTargets.tue = 300;
+  SW.storage.saveConfig(cfg);
+  SW.clock.start('bewerbung', t('10:00'));
+  SW.clock.stop(t('10:30'));
+  assertEqual(SW.storage.loadDay('2026-11-03').target, 240);
+});
+
+test('stop zerlegt einen Eintrag über Mitternacht auf zwei Tage', () => {
+  clearSw();
+  SW.clock.start('umbau', t('23:40'));
+  SW.clock.stop(t('00:20', '2026-11-04'));
+  assertEqual(eintraege('2026-11-03').length, 1);
+  assertEqual(eintraege('2026-11-04').length, 1);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 20);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-04')[0]), 20);
+  assertEqual(SW.storage.loadDay('2026-11-04').target, 240);
+});
+
+test('stop bucht nichts bei rückwärts gelaufener Uhr', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('10:00'));
+  const res = SW.clock.stop(t('09:00'));
+  assertEqual(res.ok, true);
+  assertEqual(eintraege('2026-11-03').length, 0);
+  assertEqual(SW.storage.loadRunning(), null);
+});
+
+test('start lässt den laufenden Eintrag stehen, wenn das Speichern scheitert', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const echt = Storage.prototype.setItem;
+  Storage.prototype.setItem = function () { throw new Error('voll'); };
+  let res;
+  try { res = SW.clock.start('bewerbung', t('09:30')); }
+  finally { Storage.prototype.setItem = echt; }
+  assertEqual(res.ok, false);
+  assertEqual(SW.storage.loadRunning().cat, 'haushalt');
+});
+
+suite('clock: Rückfrage und Erinnerung');
+
+test('checkOnVisible meldet ohne laufende Uhr none', () => {
+  clearSw();
+  assertEqual(SW.clock.checkOnVisible(t('09:00')).action, 'none');
+});
+
+test('checkOnVisible meldet nach reminderMinutes die Erinnerung', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const r = SW.clock.checkOnVisible(t('09:50'));
+  assertEqual(r.action, 'remind');
+  assertEqual(SW.storage.loadRunning().reminded, true);
+});
+
+test('checkOnVisible erinnert pro Eintrag nur einmal', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('09:50'));
+  assertEqual(SW.clock.checkOnVisible(t('10:00')).action, 'none');
+});
+
+test('checkOnVisible meldet nach askAfterMinutes unbeachteter Zeit eine Rückfrage', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const r = SW.clock.checkOnVisible(t('10:35'));
+  assertEqual(r.action, 'ask');
+  assertEqual(Math.round(r.minutes), 95);
+});
+
+test('checkOnVisible wertet mit dem alten lastSeen aus, bevor es ihn weitersetzt', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('09:32'));
+  // Auswertung gegen 09:32 → Rückfrage fällig; lastSeen bleibt bis zur Antwort
+  // stehen, weil 'nur bis letzte Berührung' genau diesen Zeitpunkt braucht.
+  assertEqual(SW.clock.checkOnVisible(t('11:30')).action, 'ask');
+  assertEqual(new Date(SW.storage.loadRunning().lastSeen).getTime(), t('09:32').getTime());
+  SW.clock.resolveAsk('full', t('11:31'));
+  assertEqual(new Date(SW.storage.loadRunning().lastSeen).getTime(), t('11:31').getTime());
+});
+
+test('checkOnVisible setzt lastSeen ohne Rückfrage auf jetzt', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('09:10'));
+  assertEqual(new Date(SW.storage.loadRunning().lastSeen).getTime(), t('09:10').getTime());
+});
+
+test('checkOnVisible fragt nicht, solange die App berührt wird', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('10:00'));
+  SW.clock.touch(t('11:00'));
+  assert(SW.clock.checkOnVisible(t('11:30')).action !== 'ask', 'Rückfrage trotz Berührung');
+});
+
+test('checkOnVisible fragt pro Eintrag nur einmal', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('10:35'));
+  SW.clock.resolveAsk('full', t('10:36'));
+  assertEqual(SW.clock.checkOnVisible(t('14:00')).action, 'none');
+});
+
+test('checkOnVisible meldet hardstop ab hardStopMinutes', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  const r = SW.clock.checkOnVisible(t('20:00'));
+  assertEqual(r.action, 'hardstop');
+  assertEqual(SW.storage.loadRunning(), null);
+  // Nie berührt → lastSeen ist der Start → es gibt nichts zu buchen.
+  assertEqual(eintraege('2026-11-03').length, 0);
+});
+
+test('hardstop bucht bis zur letzten Berührung und markiert autostop', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('12:00'));
+  SW.clock.checkOnVisible(t('23:00'));
+  const es = eintraege('2026-11-03');
+  assertEqual(es.length, 1);
+  assertEqual(es[0].src, 'autostop');
+  assertEqual(SW.model.entryMinutes(es[0]), 180);
+  assertEqual(SW.storage.loadRunning(), null);
+});
+
+suite('clock: Antwort auf die Rückfrage');
+
+test("resolveAsk('full') lässt die Uhr weiterlaufen", () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('10:35'));
+  assertEqual(SW.clock.resolveAsk('full', t('10:36')).ok, true);
+  assertEqual(SW.storage.loadRunning().asked, true);
+  assertEqual(eintraege('2026-11-03').length, 0);
+});
+
+test("resolveAsk('trim') beendet bei lastSeen und markiert trimmed", () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.touch(t('09:32'));
+  SW.clock.checkOnVisible(t('11:30'));
+  assertEqual(SW.clock.resolveAsk('trim', t('11:31')).ok, true);
+  const es = eintraege('2026-11-03');
+  assertEqual(es.length, 1);
+  assertEqual(es[0].src, 'trimmed');
+  assertEqual(SW.model.entryMinutes(es[0]), 32);
+  assertEqual(SW.storage.loadRunning(), null);
+});
+
+test("resolveAsk('edit') beendet jetzt und liefert die Eintrags-Id", () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.checkOnVisible(t('10:35'));
+  const res = SW.clock.resolveAsk('edit', t('10:36'));
+  assertEqual(res.ok, true);
+  const es = eintraege('2026-11-03');
+  assertEqual(es.length, 1);
+  assertEqual(res.entryId, es[0].id);
+  assertEqual(res.dateKey, '2026-11-03');
+});
+
+suite('clock: Nachträge und Korrekturen');
+
+test('addManual trägt einen Eintrag mit src manual nach', () => {
+  clearSw();
+  const res = SW.clock.addManual('2026-11-03', 'haushalt', '2026-11-03T14:00:00+01:00', '2026-11-03T15:00:00+01:00');
+  assertEqual(res.ok, true);
+  const es = eintraege('2026-11-03');
+  assertEqual(es.length, 1);
+  assertEqual(es[0].src, 'manual');
+  assertEqual(SW.model.entryMinutes(es[0]), 60);
+  assertEqual(SW.storage.loadDay('2026-11-03').target, 240);
+});
+
+test('addManual lehnt Überschneidungen mit Klartext ab', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-03', 'haushalt', '2026-11-03T14:00:00+01:00', '2026-11-03T15:00:00+01:00');
+  const res = SW.clock.addManual('2026-11-03', 'verein', '2026-11-03T14:30:00+01:00', '2026-11-03T15:30:00+01:00');
+  assertEqual(res.ok, false);
+  assert(/Überschneidet sich/.test(res.error), 'Fehlertext: ' + res.error);
+  assertEqual(eintraege('2026-11-03').length, 1);
+});
+
+test('addManual lehnt ein Ende vor dem Start ab', () => {
+  clearSw();
+  const res = SW.clock.addManual('2026-11-03', 'haushalt', '2026-11-03T15:00:00+01:00', '2026-11-03T14:00:00+01:00');
+  assertEqual(res.ok, false);
+  assertEqual(eintraege('2026-11-03').length, 0);
+});
+
+test('editEntry prüft die Überschneidung nicht gegen sich selbst', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-03', 'haushalt', '2026-11-03T14:00:00+01:00', '2026-11-03T15:00:00+01:00');
+  const id = eintraege('2026-11-03')[0].id;
+  const res = SW.clock.editEntry('2026-11-03', id, { end: '2026-11-03T15:30:00+01:00' });
+  assertEqual(res.ok, true);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[0]), 90);
+});
+
+test('editEntry markiert den geänderten Eintrag als manual', () => {
+  clearSw();
+  SW.clock.start('haushalt', t('09:00'));
+  SW.clock.stop(t('09:30'));
+  const id = eintraege('2026-11-03')[0].id;
+  SW.clock.editEntry('2026-11-03', id, { cat: 'verein' });
+  assertEqual(eintraege('2026-11-03')[0].cat, 'verein');
+  assertEqual(eintraege('2026-11-03')[0].src, 'manual');
+});
+
+test('editEntry lehnt eine Überschneidung mit einem anderen Eintrag ab', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-03', 'haushalt', '2026-11-03T14:00:00+01:00', '2026-11-03T15:00:00+01:00');
+  SW.clock.addManual('2026-11-03', 'verein', '2026-11-03T16:00:00+01:00', '2026-11-03T17:00:00+01:00');
+  const id = eintraege('2026-11-03')[1].id;
+  const res = SW.clock.editEntry('2026-11-03', id, { start: '2026-11-03T14:30:00+01:00' });
+  assertEqual(res.ok, false);
+  assertEqual(SW.model.entryMinutes(eintraege('2026-11-03')[1]), 60);
+});
+
+test('deleteEntry entfernt den Eintrag', () => {
+  clearSw();
+  SW.clock.addManual('2026-11-03', 'haushalt', '2026-11-03T14:00:00+01:00', '2026-11-03T15:00:00+01:00');
+  const id = eintraege('2026-11-03')[0].id;
+  assertEqual(SW.clock.deleteEntry('2026-11-03', id).ok, true);
+  assertEqual(eintraege('2026-11-03').length, 0);
+});
+
+test('deleteEntry meldet einen unbekannten Eintrag', () => {
+  clearSw();
+  assertEqual(SW.clock.deleteEntry('2026-11-03', 'gibtsnicht').ok, false);
+});
+
+runAll();
+</script>
+</body>
+</html>

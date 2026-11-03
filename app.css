@@ -1,0 +1,172 @@
+/* app.css — dunkel, einhandtauglich, Farben aus dem Logo (Spec §8). */
+
+:root {
+  --bg: #15181d;
+  --flaeche: #1d2127;
+  --linie: #2c313a;
+  --text: #e8eaed;
+  --schwach: rgba(232, 234, 237, .55);
+  --akzent: #f0b429;
+  --stopp: #e3342f;
+  --ok: #38c172;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+}
+
+main {
+  padding: 14px 14px calc(72px + env(safe-area-inset-bottom, 0px));
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.screen { display: none; }
+.screen.active { display: block; }
+
+h2 { font-size: 1.05rem; margin: 2px 0 12px; }
+
+/* ── Kopf mit Sau und Spruch ─────────────────────────────────── */
+
+.kopf { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+
+.sau {
+  width: 44px; height: 44px; flex: none; object-fit: contain;
+  transition: transform .3s ease, filter .3s ease;
+}
+.sau-auf {
+  transform: rotate(-12deg) scale(1.06);
+  filter: drop-shadow(0 0 0 2px var(--ok)) drop-shadow(0 0 6px rgba(56, 193, 114, .8));
+}
+
+.taunt {
+  margin: 0; font-size: .82rem; line-height: 1.35;
+  color: #ffb454; font-style: italic;
+}
+.hero.ok ~ * .taunt, .kopf .taunt { }
+
+/* ── Tageszähler ─────────────────────────────────────────────── */
+
+.hero {
+  background: var(--flaeche); border: 1px solid var(--linie);
+  border-radius: 16px; padding: 13px; margin-bottom: 13px;
+  transition: border-color .3s ease;
+}
+.hero.ok { border-color: var(--ok); }
+
+.num { font-size: 2.1rem; font-weight: 800; line-height: 1; }
+.num-soll { font-size: .85rem; opacity: .45; font-weight: 600; }
+.hero.ok .num-ist { color: #7fe0a0; }
+
+.lbl {
+  font-size: .68rem; opacity: .55; margin: 5px 0 10px;
+  text-transform: uppercase; letter-spacing: .6px;
+}
+
+.track {
+  height: 14px; border-radius: 7px; background: var(--linie);
+  overflow: hidden; display: flex;
+}
+.track i { display: block; height: 100%; transition: width .3s ease; }
+
+.legend {
+  font-size: .66rem; opacity: .5; margin-top: 6px;
+  display: flex; justify-content: space-between; gap: 8px;
+}
+
+/* ── Kategoriezeilen ─────────────────────────────────────────── */
+
+.row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; border-radius: 12px;
+  background: var(--flaeche); border: 1px solid var(--linie);
+  margin-bottom: 7px;
+}
+.row.run { border-color: var(--akzent); }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+.nm { flex: 1; font-size: .83rem; font-weight: 600; min-width: 0; }
+.nm em {
+  display: block; font-size: .64rem; font-style: normal;
+  opacity: .5; font-weight: 500; margin-top: 2px;
+}
+
+.tm { font-size: .78rem; font-variant-numeric: tabular-nums; opacity: .75; }
+
+.btn {
+  width: 34px; height: 34px; flex: none; border: 0; cursor: pointer;
+  border-radius: 50%; background: var(--akzent); color: #2a1d00;
+  font-size: .8rem; font-weight: 800;
+}
+.btn.stop { border-radius: 9px; background: var(--stopp); color: #fff; }
+
+.fuss {
+  margin-top: 11px; padding-top: 9px; border-top: 1px solid var(--linie);
+  font-size: .7rem; opacity: .7; display: flex; justify-content: space-between;
+}
+
+.export-hint { font-size: .66rem; opacity: .5; margin: 8px 0 0; }
+
+/* ── Navigation ──────────────────────────────────────────────── */
+
+nav {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: flex; background: #11141a; border-top: 1px solid var(--linie);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+nav button {
+  flex: 1; border: 0; background: none; color: var(--schwach);
+  padding: 13px 4px; font-size: .68rem; cursor: pointer;
+}
+nav button.active { color: var(--akzent); font-weight: 700; }
+
+/* ── Banner und Rückfrage ────────────────────────────────────── */
+
+.banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; font-size: .78rem;
+  background: var(--akzent); color: #2a1d00;
+}
+.banner.error { background: var(--stopp); color: #fff; }
+.banner span { flex: 1; }
+.banner-close {
+  border: 0; background: rgba(0, 0, 0, .15); color: inherit;
+  width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: .7rem;
+}
+
+.ask-backdrop {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(0, 0, 0, .72);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.ask {
+  background: var(--flaeche); border: 1px solid var(--akzent);
+  border-radius: 16px; padding: 18px; width: 100%; max-width: 340px;
+}
+.ask-frage { margin: 0 0 14px; font-size: .95rem; font-weight: 700; }
+.ask button {
+  display: block; width: 100%; margin-bottom: 8px; cursor: pointer;
+  padding: 12px; border-radius: 10px; border: 1px solid var(--linie);
+  background: #262b33; color: var(--text); font-size: .8rem;
+}
+.ask button:first-of-type { background: var(--akzent); color: #2a1d00; font-weight: 700; border-color: var(--akzent); }
+
+/* ── Formulare, Listen, Platzhalter ──────────────────────────── */
+
+.empty { opacity: .5; font-size: .8rem; padding: 18px 2px; }
+.fehler { color: var(--stopp); font-size: .75rem; margin: 0 0 10px; }
+
+input, select, button { font-family: inherit; }
+input, select {
+  background: #11141a; border: 1px solid var(--linie); color: var(--text);
+  border-radius: 8px; padding: 8px; font-size: .8rem;
+}

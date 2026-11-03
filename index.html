@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#15181d">
+  <title>Schaff was!</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./Logo-icon.png">
+  <link rel="apple-touch-icon" href="./Logo-icon.png">
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+
+<main>
+  <section id="screen-main" class="screen active"></section>
+  <section id="screen-log" class="screen"></section>
+  <section id="screen-history" class="screen"></section>
+  <section id="screen-settings" class="screen"></section>
+</main>
+
+<nav>
+  <button id="nav-main" data-screen="screen-main" class="active">Heute</button>
+  <button id="nav-log" data-screen="screen-log">Protokoll</button>
+  <button id="nav-history" data-screen="screen-history">Historie</button>
+  <button id="nav-settings" data-screen="screen-settings">Einstellungen</button>
+</nav>
+
+<script src="./version.js"></script>
+<script src="./storage.js"></script>
+<script src="./model.js"></script>
+<script src="./clock.js"></script>
+<script src="./taunts.js"></script>
+<script src="./ui.js"></script>
+<script src="./ui-main.js"></script>
+<script src="./ui-log.js"></script>
+<script src="./ui-history.js"></script>
+<script src="./ui-settings.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

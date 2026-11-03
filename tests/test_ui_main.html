@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Hauptschirm – Unit Tests</title>
+</head>
+<body>
+<h1>Hauptschirm – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+<div id="buehne" style="display:none"></div>
+
+<script src="../version.js"></script>
+<script src="../storage.js"></script>
+<script src="../model.js"></script>
+<script src="../clock.js"></script>
+<script src="../taunts.js"></script>
+<script src="../ui.js"></script>
+<script src="../ui-main.js"></script>
+<script src="_runner.js"></script>
+<script>
+const CFG = SW.storage.DEFAULTS;
+
+function clearSw() {
+  Object.keys(localStorage).filter(k => k.indexOf('sw_') === 0).forEach(k => localStorage.removeItem(k));
+}
+
+function eintrag(id, cat, dateStr, vonHhmm, minuten) {
+  const start = new Date(dateStr + 'T' + vonHhmm + ':00');
+  const ende = new Date(start.getTime() + minuten * 60000);
+  return { id: id, cat: cat, start: SW.model.toLocalIso(start), end: SW.model.toLocalIso(ende), src: 'timer' };
+}
+
+function tag(dateStr, liste) {
+  const snap = SW.model.snapshotRules(dateStr, CFG);
+  return { target: snap.target, mins: snap.mins, entries: liste };
+}
+
+function leererLoader() { return function () { return null; }; }
+
+// Dienstag, 27 min Haushalt + 45 min Bewerbungen = 72 min
+const TAG = tag('2026-11-03', [
+  eintrag('e1', 'haushalt', '2026-11-03', '09:05', 27),
+  eintrag('e2', 'bewerbung', '2026-11-03', '10:00', 45)
+]);
+const JETZT = new Date('2026-11-03T11:00:00');
+
+suite('ui: Formatierung');
+
+test('fmt zeigt Stunden ab 60 Minuten', () => {
+  assertEqual(SW.ui.fmt(72), '1:12');
+  assertEqual(SW.ui.fmt(120), '2:00');
+  assertEqual(SW.ui.fmt(27), '27 min');
+  assertEqual(SW.ui.fmt(0), '0 min');
+});
+
+test('fmtHM zeigt immer Stunden und Minuten', () => {
+  assertEqual(SW.ui.fmtHM(0), '0:00');
+  assertEqual(SW.ui.fmtHM(27), '0:27');
+  assertEqual(SW.ui.fmtHM(72), '1:12');
+  assertEqual(SW.ui.fmtHM(240), '4:00');
+});
+
+test('fmtClock zeigt Minuten und Sekunden', () => {
+  assertEqual(SW.ui.fmtClock(1634), '27:14');
+  assertEqual(SW.ui.fmtClock(5), '00:05');
+});
+
+suite('Hauptschirm-Modell');
+
+test('model zeigt Tagessumme und Soll', () => {
+  clearSw();
+  const m = SW.main.model(JETZT, CFG, TAG, leererLoader());
+  assertEqual(m.total, 72);
+  assertEqual(m.target, 240);
+  assertEqual(m.dateKey, '2026-11-03');
+  assertEqual(m.fulfilled, false);
+  assertEqual(m.free, false);
+  assert(typeof m.taunt === 'string' && m.taunt.length > 0, 'kein Spruch');
+});
+
+test('model stapelt den Balken in Kategorie-Reihenfolge mit Anteilen', () => {
+  clearSw();
+  const m = SW.main.model(JETZT, CFG, TAG, leererLoader());
+  assertEqual(m.bar.length, 2);
+  assertEqual(m.bar[0].cat, 'haushalt');
+  assertEqual(m.bar[0].color, '#f0b429');
+  assertClose(m.bar[0].share, 27 / 240, 0.0001);
+  const summe = m.bar.reduce((a, b) => a + b.share, 0);
+  assert(summe <= 1.0001, 'Anteile über 100 %: ' + summe);
+});
+
+test('model deckelt die Anteile bei übererfülltem Tag', () => {
+  clearSw();
+  const voll = tag('2026-11-03', [eintrag('e1', 'haushalt', '2026-11-03', '08:00', 300)]);
+  const m = SW.main.model(JETZT, CFG, voll, leererLoader());
+  assertClose(m.bar.reduce((a, b) => a + b.share, 0), 1, 0.0001);
+});
+
+test('model beschriftet ein Tagesminimum mit dem Tagesstand', () => {
+  clearSw();
+  const m = SW.main.model(JETZT, CFG, TAG, leererLoader());
+  assertEqual(m.rows[0].cat, 'haushalt');
+  assertEqual(m.rows[0].minLabel, '27 / 30 min heute');
+  assertEqual(m.rows[0].minDone, false);
+});
+
+test('model markiert erfüllte Minima', () => {
+  clearSw();
+  const m = SW.main.model(JETZT, CFG, TAG, leererLoader());
+  assertEqual(m.rows[1].cat, 'bewerbung');
+  assertEqual(m.rows[1].minLabel, 'Minimum erfüllt ✓');
+  assertEqual(m.rows[1].minDone, true);
+});
+
+test('model beschriftet ein Wochenminimum mit dem Wochenstand', () => {
+  clearSw();
+  const woche = { '2026-11-02': tag('2026-11-02', [eintrag('v1', 'verein', '2026-11-02', '18:00', 90)]) };
+  const m = SW.main.model(JETZT, CFG, TAG, function (d) { return woche[d] || null; });
+  assertEqual(m.rows[2].cat, 'verein');
+  assertEqual(m.rows[2].minLabel, '1:30 / 2:00 diese Woche');
+  assertEqual(m.rows[2].minDone, false);
+});
+
+test('model markiert die laufende Kategorie', () => {
+  clearSw();
+  SW.clock.start('verein', JETZT);
+  const m = SW.main.model(JETZT, CFG, TAG, leererLoader());
+  const laufend = m.rows.filter(r => r.running);
+  assertEqual(laufend.length, 1);
+  assertEqual(laufend[0].cat, 'verein');
+  clearSw();
+});
+
+test('model führt nur aktive Kategorien', () => {
+  clearSw();
+  const cfg = JSON.parse(JSON.stringify(CFG));
+  cfg.categories[3].active = false;
+  assertEqual(SW.main.model(JETZT, cfg, TAG, leererLoader()).rows.length, 3);
+});
+
+test('model meldet den erfüllten Tag', () => {
+  clearSw();
+  const voll = tag('2026-11-03', [
+    eintrag('e1', 'haushalt', '2026-11-03', '08:00', 60),
+    eintrag('e2', 'bewerbung', '2026-11-03', '09:00', 60),
+    eintrag('e3', 'verein', '2026-11-03', '10:00', 60),
+    eintrag('e4', 'umbau', '2026-11-03', '11:00', 60)
+  ]);
+  const m = SW.main.model(JETZT, CFG, voll, leererLoader());
+  assertEqual(m.fulfilled, true);
+});
+
+test('model zeigt Serie und Wochensumme', () => {
+  clearSw();
+  const woche = { '2026-11-02': tag('2026-11-02', [eintrag('v1', 'verein', '2026-11-02', '18:00', 90)]) };
+  const m = SW.main.model(JETZT, CFG, TAG, function (d) { return d === '2026-11-03' ? TAG : (woche[d] || null); });
+  assertEqual(m.streak, 0);
+  assertEqual(m.weekTotal, 162);
+});
+
+test('model setzt den Export-Hinweis erst nach 14 Tagen', () => {
+  clearSw();
+  SW.storage.markExported(SW.model.toLocalIso(new Date(JETZT.getTime() - 13 * 86400000)));
+  assertEqual(SW.main.model(JETZT, CFG, TAG, leererLoader()).exportHint, null);
+  SW.storage.markExported(SW.model.toLocalIso(new Date(JETZT.getTime() - 15 * 86400000)));
+  const hint = SW.main.model(JETZT, CFG, TAG, leererLoader()).exportHint;
+  assert(/15 Tagen/.test(hint), 'Hinweis: ' + hint);
+  clearSw();
+});
+
+test('model kommt mit einem leeren Tag zurecht', () => {
+  clearSw();
+  const m = SW.main.model(JETZT, CFG, null, leererLoader());
+  assertEqual(m.total, 0);
+  assertEqual(m.bar.length, 0);
+  assertEqual(m.rows.length, 4);
+});
+
+test('model beschriftet ein unberührtes Wochenminimum mit 0:00', () => {
+  clearSw();
+  const m = SW.main.model(JETZT, CFG, null, leererLoader());
+  assertEqual(m.rows[2].minLabel, '0:00 / 2:00 diese Woche');
+});
+
+suite('Hauptschirm-Darstellung');
+
+const buehne = document.getElementById('buehne');
+
+test('render erzeugt eine Zeile je aktiver Kategorie', () => {
+  clearSw();
+  SW.main.render(buehne, SW.main.model(JETZT, CFG, TAG, leererLoader()));
+  assertEqual(buehne.querySelectorAll('.row').length, 4);
+  assert(/1:12/.test(buehne.textContent), 'Tagessumme fehlt');
+});
+
+test('render zeigt den leeren Tag als 0:00, nicht als 0 min', () => {
+  clearSw();
+  SW.main.render(buehne, SW.main.model(JETZT, CFG, null, leererLoader()));
+  assertEqual(buehne.querySelector('.num-ist').textContent, '0:00');
+  assertEqual(buehne.querySelector('.num-soll').textContent, ' / 4:00');
+});
+
+test('render färbt den Kopf grün bei erfülltem Tag', () => {
+  clearSw();
+  const voll = tag('2026-11-03', [
+    eintrag('e1', 'haushalt', '2026-11-03', '08:00', 60),
+    eintrag('e2', 'bewerbung', '2026-11-03', '09:00', 60),
+    eintrag('e3', 'verein', '2026-11-03', '10:00', 60),
+    eintrag('e4', 'umbau', '2026-11-03', '11:00', 60)
+  ]);
+  SW.main.render(buehne, SW.main.model(JETZT, CFG, voll, leererLoader()));
+  assert(buehne.querySelector('.hero.ok'), 'Kopf nicht grün');
+  assert(buehne.querySelector('.sau-auf'), 'Sau steht nicht auf');
+});
+
+test('render zeigt den Stopp-Knopf bei laufender Kategorie', () => {
+  clearSw();
+  SW.clock.start('haushalt', JETZT);
+  SW.main.render(buehne, SW.main.model(JETZT, CFG, TAG, leererLoader()));
+  assertEqual(buehne.querySelectorAll('.row.run').length, 1);
+  assertEqual(buehne.querySelectorAll('.btn.stop').length, 1);
+  clearSw();
+});
+
+suite('Banner und Rückfrage');
+
+test('banner zeigt die Erinnerung als Streifen, nicht als Notification', () => {
+  let notificationGenutzt = false;
+  const echt = window.Notification;
+  if (echt) {
+    window.Notification = function () { notificationGenutzt = true; };
+    window.Notification.requestPermission = function () { notificationGenutzt = true; };
+  }
+  try {
+    SW.ui.banner('Läuft die Uhr noch, oder du?', 'remind');
+  } finally {
+    if (echt) window.Notification = echt;
+  }
+  const b = document.querySelector('.banner.remind');
+  assert(b, 'Banner fehlt');
+  assert(/Läuft die Uhr noch/.test(b.textContent), 'Text fehlt');
+  assertEqual(notificationGenutzt, false);
+  SW.ui.clearBanner();
+});
+
+test('banner lässt sich schließen', () => {
+  SW.ui.banner('Fehler beim Speichern', 'error');
+  document.querySelector('.banner .banner-close').click();
+  assertEqual(document.querySelector('.banner'), null);
+});
+
+test('ask bietet genau drei Knöpfe und meldet die Wahl zurück', () => {
+  let gewaehlt = null;
+  SW.ui.ask({ cat: 'Haushalt', minutes: 130, lastSeen: '2026-11-03T09:32:00+01:00' }, c => { gewaehlt = c; });
+  const knoepfe = document.querySelectorAll('.ask button');
+  assertEqual(knoepfe.length, 3);
+  assert(/09:32/.test(knoepfe[1].textContent), 'Zeitpunkt der letzten Berührung fehlt: ' + knoepfe[1].textContent);
+  assert(/2:10/.test(document.querySelector('.ask').textContent), 'Laufzeit fehlt');
+  knoepfe[1].click();
+  assertEqual(gewaehlt, 'trim');
+  assertEqual(document.querySelector('.ask'), null);
+});
+
+runAll();
+</script>
+</body>
+</html>
